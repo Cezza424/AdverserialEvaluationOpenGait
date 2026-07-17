@@ -1,5 +1,5 @@
 data_cfg:
-  dataset_name: CCPG
+  dataset_name: HealthGait
   dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouette_Heatmap  # <-- Point to the skeleton pickles
   dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
   test_dataset_name: HealthGait
@@ -44,40 +44,40 @@ model_cfg:
       - 1
     C: 2
   SeparateBNNecks:
-    class_num: 100
+    class_num: 298
 
 optimizer_cfg:
-  lr: 0.1
+  lr: 0.001  # Reduced from 0.1 for gentle fine-tuning
   momentum: 0.9
   solver: SGD
   weight_decay: 0.0005
 
 scheduler_cfg:
   gamma: 0.1
-  milestones: # Learning Rate Reduction at each milestones
-    - 20000
-    - 30000
-    - 40000
+  milestones:
+    - 5000   # Scaled down from 20000
+    - 10000  # Scaled down from 30000
+    - 15000  # Scaled down from 40000
   scheduler: MultiStepLR
 
 trainer_cfg:
-  enable_float16: true # half_percesion float for memory reduction and speedup
+  enable_float16: true
   fix_BN: false
   log_iter: 100
-  restore_ckpt_strict: true
-  restore_hint: 30000
-  save_iter: 10000
-  save_name: DeepGaitV2_P3D_GaitMap_B1C2_Sigma-8.0_Hot_False_Align-True_OpenGaitDA-True_ML_LowLevel
+  restore_ckpt_strict: false  # CRITICAL: Must be false because class_num changed
+  restore_hint: C:\Users\25299867\PycharmProjects\OpenGait\output\CCPG\SkeletonGaitPP\SkeletonGaitPP\checkpoints\SkeletonGaitPP-60000-clean.pt  # Use the absolute path
+  save_iter: 5000
+  save_name: SkeletonGaitPP_HealthGait_Finetune  # Renamed for safety
   sync_BN: true
-  total_iter: 60000
+  total_iter: 20000  # Reduced from 60000
   sampler:
     batch_shuffle: true
     batch_size:
-      - 8 # TripletSampler, batch_size[0] indicates Number of Identity
-      - 16  #                 batch_size[1] indicates Samples sequqnce for each Identity
-    frames_num_fixed: 30 # fixed frames number for training
+      - 4
+      - 4
+    frames_num_fixed: 30
     frames_skip_num: 4
-    sample_type: fixed_ordered # fixed control input frames number, unordered for controlling order of input tensor; Other options: unfixed_ordered or all_ordered
+    sample_type: fixed_ordered
     type: TripletSampler
   transform:
     # - type: Compose
