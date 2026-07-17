@@ -1,4 +1,4 @@
-from .common import get_ddp_module, ddp_all_gather
+from .common import get_ddp_module, ddp_all_gather, get_dist_rank, get_dist_world_size
 from .common import Odict, Ntuple
 from .common import get_valid_args
 from .common import is_list_or_tuple, is_bool, is_str, is_int, is_list, is_bool_list, is_int_list, is_dict, is_tensor, is_array, config_loader, init_seeds, handler, params_count

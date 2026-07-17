@@ -176,7 +176,9 @@ def ddp_all_gather(features, dim=0, requires_grad=True):
     '''
         inputs: [n, ...]
     '''
-
+    if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
+        return features
+    
     world_size = torch.distributed.get_world_size()
     rank = torch.distributed.get_rank()
     feature_list = [torch.ones_like(features) for _ in range(world_size)]
@@ -186,6 +188,20 @@ def ddp_all_gather(features, dim=0, requires_grad=True):
         feature_list[rank] = features
     feature = torch.cat(feature_list, dim=dim)
     return feature
+
+
+def get_dist_rank():
+    """Get the rank of the current process, safely handling non-distributed mode."""
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_rank()
+    return 0
+
+
+def get_dist_world_size():
+    """Get the world size, safely handling non-distributed mode."""
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_world_size()
+    return 1
 
 
 # https://github.com/pytorch/pytorch/issues/16885

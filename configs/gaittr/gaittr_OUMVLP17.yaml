@@ -1,10 +1,10 @@
 data_cfg:
   dataset_name: OUMVLP
-  dataset_root: your_path
-  dataset_partition: ./datasets/OUMVLP/OUMVLP.json
-  num_workers: 1
+  dataset_root: C:\Users\25299867\Downloads\HealthGait\posePKL  # <-- Point to the skeleton pickles
+  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
+  test_dataset_name: HealthGait
+  num_workers: 0
   remove_no_gallery: false
-  test_dataset_name: OUMVLP
   frame_threshold: 0
 
 evaluator_cfg:
@@ -14,7 +14,7 @@ evaluator_cfg:
   save_name: GaitTR_17
   eval_func: evaluate_indoor_dataset
   sampler:
-    batch_size: 4 #should same to num_gpus
+    batch_size: 1 #should same to num_gpus
     sample_type: all_ordered
     type: InferenceSampler
   metric: euc # cos

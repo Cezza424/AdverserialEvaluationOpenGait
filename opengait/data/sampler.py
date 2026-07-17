@@ -3,6 +3,7 @@ import random
 import torch
 import torch.distributed as dist
 import torch.utils.data as tordata
+from utils import get_dist_rank, get_dist_world_size
 
 
 class TripletSampler(tordata.sampler.Sampler):
@@ -14,11 +15,11 @@ class TripletSampler(tordata.sampler.Sampler):
                 "batch_size should be (P x K) not {}".format(batch_size))
         self.batch_shuffle = batch_shuffle
 
-        self.world_size = dist.get_world_size()
+        self.world_size = get_dist_world_size()
         if (self.batch_size[0]*self.batch_size[1]) % self.world_size != 0:
             raise ValueError("World size ({}) is not divisible by batch_size ({} x {})".format(
                 self.world_size, batch_size[0], batch_size[1]))
-        self.rank = dist.get_rank()
+        self.rank = get_dist_rank()
 
     def __iter__(self):
         while True:
@@ -60,7 +61,8 @@ def sync_random_sample_list(obj_list, k, common_choice=False):
         idx = torch.randperm(len(obj_list))[:k]
     if torch.cuda.is_available():
         idx = idx.cuda()
-    torch.distributed.broadcast(idx, src=0)
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.broadcast(idx, src=0)
     idx = idx.tolist()
     return [obj_list[i] for i in idx]
 
@@ -68,13 +70,16 @@ def sync_random_sample_list(obj_list, k, common_choice=False):
 class InferenceSampler(tordata.sampler.Sampler):
     def __init__(self, dataset, batch_size):
         self.dataset = dataset
+        # Handle batch_size of 0 - default to 1
+        if batch_size == 0:
+            batch_size = 1
         self.batch_size = batch_size
 
         self.size = len(dataset)
         indices = list(range(self.size))
 
-        world_size = dist.get_world_size()
-        rank = dist.get_rank()
+        world_size = get_dist_world_size()
+        rank = get_dist_rank()
 
         if batch_size % world_size != 0:
             raise ValueError("World size ({}) is not divisible by batch_size ({})".format(
@@ -113,11 +118,11 @@ class CommonSampler(tordata.sampler.Sampler):
                 "batch_size shoude be (B) not {}".format(batch_size))
         self.batch_shuffle = batch_shuffle
         
-        self.world_size = dist.get_world_size()
+        self.world_size = get_dist_world_size()
         if self.batch_size % self.world_size !=0:
             raise ValueError("World size ({}) is not divisble by batch_size ({})".format(
                 self.world_size, batch_size))
-        self.rank = dist.get_rank() 
+        self.rank = get_dist_rank()
     
     def __iter__(self):
         while True:
@@ -144,8 +149,8 @@ class BilateralSampler(tordata.sampler.Sampler):
         self.batch_size = batch_size
         self.batch_shuffle = batch_shuffle
 
-        self.world_size = dist.get_world_size()
-        self.rank = dist.get_rank()
+        self.world_size = get_dist_world_size()
+        self.rank = get_dist_rank()
 
         self.dataset_length = len(self.dataset)
         self.total_indices = list(range(self.dataset_length))

@@ -1,9 +1,9 @@
 data_cfg:
   dataset_name: OUMVLP
-  dataset_root: your_path
-  dataset_partition: ./datasets/OUMVLP/OUMVLP.json
-  test_dataset_name: OUMVLP
-  num_workers: 8
+  dataset_root: C:\Users\25299867\Downloads\HealthGait\posePKL  # <-- Point to the skeleton pickles
+  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
+  test_dataset_name: HealthGait
+  num_workers: 0
   remove_no_gallery: false
   frame_threshold: 17
 
@@ -13,7 +13,7 @@ evaluator_cfg:
   restore_hint: 150000
   save_name: GaitGraph1_phase1
   sampler:
-    batch_size: 256
+    batch_size: 1
     frames_num_fixed: 35
     frames_num_max: 50
     frames_num_min: 25

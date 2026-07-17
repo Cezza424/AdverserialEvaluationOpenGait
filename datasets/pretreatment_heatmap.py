@@ -7,13 +7,17 @@ import random
 import pickle
 import argparse
 import numpy as np
-from glob import glob 
+from glob import glob
 from tqdm import tqdm
 import matplotlib.cm as cm
 import torch.distributed as dist
 from torchvision import transforms as T
 from torch.utils.data import Dataset, DataLoader
 from sklearn.impute import KNNImputer, SimpleImputer
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from opengait.utils import get_dist_rank, get_dist_world_size
 
 torch.manual_seed(347)
 random.seed(347)
@@ -114,7 +118,7 @@ class GeneratePoseTarget:
             tmp_st_y = int(mu_y - 3 * sigma)
             tmp_ed_y = int(mu_y + 3 * sigma)
 
-            st_x = max(tmp_st_x, 0) 
+            st_x = max(tmp_st_x, 0)
             ed_x = min(tmp_ed_x + 1, img_w)
             st_y = max(tmp_st_y, 0)
             ed_y = min(tmp_ed_y + 1, img_h)
@@ -155,9 +159,9 @@ class GeneratePoseTarget:
             min_y, max_y = min(start[1], end[1]), max(start[1], end[1])
 
 
-            
+
             tmp_min_x = int(min_x - 3 * sigma)
-            tmp_max_x = int(max_x + 3 * sigma) 
+            tmp_max_x = int(max_x + 3 * sigma)
             tmp_min_y = int(min_y - 3 * sigma)
             tmp_max_y = int(max_y + 3 * sigma)
 
@@ -249,7 +253,7 @@ class GeneratePoseTarget:
         else:
             all_kpscores = np.ones(kp_shape[:-1], dtype=np.float32)
 
-        
+
 
         # scale img_h, img_w and kps
         img_h = int(self.img_h * self.scaling + 0.5)
@@ -281,7 +285,7 @@ class GeneratePoseTarget:
         pose_data = pose_data[None,...] # (1, T, V, C=3/2)
 
         heatmap = self.gen_an_aug(pose_data)
-        
+
         if self.double:
             indices = np.arange(heatmap.shape[1], dtype=np.int64)
             left, right = (self.left_kp, self.right_kp) if self.with_kp else (self.left_limb, self.right_limb)
@@ -310,7 +314,7 @@ class HeatmapToImage:
     """
     def __init__(self) -> None:
         self.cmap = cm.gray
-    
+
     def __call__(self, heatmaps):
         """
         heatmaps: (T, 17, H, W)
@@ -329,11 +333,11 @@ class CenterAndScaleNormalizer:
     def __init__(self, pose_format="coco", use_conf=True, heatmap_image_height=128) -> None:
         """
         Parameters:
-        - pose_format (str): Specifies the format of the keypoints. 
-                            This parameter determines how the keypoints are structured and indexed. 
-                            The supported formats are "coco" or "openpose-x" where 'x' can be either 18 or 25, indicating the number of keypoints used by the OpenPose model. 
+        - pose_format (str): Specifies the format of the keypoints.
+                            This parameter determines how the keypoints are structured and indexed.
+                            The supported formats are "coco" or "openpose-x" where 'x' can be either 18 or 25, indicating the number of keypoints used by the OpenPose model.
         - use_conf (bool): Indicates whether confidence scores.
-        - heatmap_image_height (int): Sets the height (in pixels) for the heatmap images that will be normlization. 
+        - heatmap_image_height (int): Sets the height (in pixels) for the heatmap images that will be normlization.
         """
         self.pose_format = pose_format
         self.use_conf = use_conf
@@ -354,7 +358,7 @@ class CenterAndScaleNormalizer:
             score = np.expand_dims(data[..., -1], axis=-1)
         else:
             pose_seq = data[..., :-1]
-        
+
         # Hip as the center point
         if self.pose_format.lower() == "coco":
             hip  = (pose_seq[:, 11] + pose_seq[:, 12]) / 2. # [t, 2]
@@ -367,12 +371,15 @@ class CenterAndScaleNormalizer:
         pose_seq = pose_seq - hip[:, np.newaxis, :]
 
         # Scale-normalization
-        y_max = np.max(pose_seq[:, :, 1], axis=-1) # [t]
-        y_min = np.min(pose_seq[:, :, 1], axis=-1) # [t]
-        pose_seq *= ((self.heatmap_image_height // 1.5) / (y_max - y_min)[:, np.newaxis, np.newaxis]) # [t, v, 2]
-        
+        # Scale-normalization
+        y_max = np.max(pose_seq[:, :, 1], axis=-1)  # [t]
+        y_min = np.min(pose_seq[:, :, 1], axis=-1)  # [t]
+
+        # Protect against division by zero for frames with missing/collapsed skeletons
+        height_diff = np.maximum((y_max - y_min), 1e-5)
+        pose_seq *= ((self.heatmap_image_height // 1.5) / height_diff[:, np.newaxis, np.newaxis])  # [t, v, 2]
         pose_seq += self.heatmap_image_height // 2
-        
+
         if self.use_conf:
             pose_seq = np.concatenate([pose_seq, score], axis=-1)
         return pose_seq
@@ -395,7 +402,7 @@ class PadKeypoints:
             self.imputer = SimpleImputer(missing_values=0.0, strategy='mean',add_indicator=True)
         else:
             raise ValueError(f"Error value for padding method: {pad_method}")
-    
+
     def __call__(self, raw_data):
         """
         raw_data: (T, V, C)
@@ -450,7 +457,7 @@ class COCO18toCOCO17:
                 16: 10,# "right_ankle"
             }
         self.transfer = transfer_to_coco17
-    
+
     def __call__(self, data):
 
         """
@@ -509,7 +516,7 @@ class HeatmapAlignment():
         Output: [1, final_img_size, final_img_size]
         """
         raw_heatmap = heatmap[0]
-        if self.align: 
+        if self.align:
             y_sum = raw_heatmap.sum(axis=1)
             y_top = (y_sum != 0).argmax(axis=0)
             y_btm = (y_sum != 0).cumsum(axis=0).argmax(axis=0)
@@ -524,7 +531,7 @@ class HeatmapAlignment():
         return (T, 1, final_img_size, final_img_size)
         """
         heatmap_imgs = heatmap_imgs / 255.
-        heatmap_imgs = np.array([self.center_crop(heatmap_img) for heatmap_img in heatmap_imgs]) 
+        heatmap_imgs = np.array([self.center_crop(heatmap_img) for heatmap_img in heatmap_imgs])
         return (heatmap_imgs * 255).astype('uint8')
 
 def GenerateHeatmapTransform(
@@ -537,24 +544,24 @@ def GenerateHeatmapTransform(
 
     base_transform = T.Compose([
         COCO18toCOCO17(**coco18tococo17_args),
-        PadKeypoints(**padkeypoints_args), 
-        CenterAndScaleNormalizer(**norm_args), 
+        PadKeypoints(**padkeypoints_args),
+        CenterAndScaleNormalizer(**norm_args),
     ])
 
     heatmap_generator_args["with_limb"] = True
     heatmap_generator_args["with_kp"] = False
     transform_bone = T.Compose([
-        GeneratePoseTarget(**heatmap_generator_args), 
-        HeatmapToImage(), 
-        HeatmapAlignment(**align_args) 
+        GeneratePoseTarget(**heatmap_generator_args),
+        HeatmapToImage(),
+        HeatmapAlignment(**align_args)
     ])
 
     heatmap_generator_args["with_limb"] = False
     heatmap_generator_args["with_kp"] = True
     transform_joint = T.Compose([
-        GeneratePoseTarget(**heatmap_generator_args), 
-        HeatmapToImage(), 
-        HeatmapAlignment(**align_args) 
+        GeneratePoseTarget(**heatmap_generator_args),
+        HeatmapToImage(),
+        HeatmapAlignment(**align_args)
     ])
 
     transform = T.Compose([
@@ -579,13 +586,15 @@ class SequentialDistributedSampler(torch.utils.data.sampler.Sampler):
 
     def __init__(self, dataset, batch_size, rank=None, num_replicas=None):
         if num_replicas is None:
-            if not torch.distributed.is_available():
-                raise RuntimeError("Requires distributed package to be available")
-            num_replicas = torch.distributed.get_world_size()
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                num_replicas = get_dist_world_size()
+            else:
+                num_replicas = 1
         if rank is None:
-            if not torch.distributed.is_available():
-                raise RuntimeError("Requires distributed package to be available")
-            rank = torch.distributed.get_rank()
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                rank = get_dist_rank()
+            else:
+                rank = 0
         self.dataset = dataset
         self.num_replicas = num_replicas
         self.rank = rank
@@ -611,7 +620,7 @@ class TransferDataset(Dataset):
         pose_root = args.pose_data_path
         sigma = generate_heatemap_cfgs['heatmap_generator_args']['sigma']
         self.dataset_name = args.dataset_name
-        assert self.dataset_name.lower() in ["sustech1k", "grew", "ccpg", "oumvlp", "ou-mvlp", "gait3d", "casiab", "casiae"], f"Invalid dataset name: {self.dataset_name}"
+        assert self.dataset_name.lower() in ["sustech1k", "grew", "ccpg", "oumvlp", "ou-mvlp", "gait3d", "casiab", "casiae", "healthgait"], f"Invalid dataset name: {self.dataset_name}"
         self.save_root = os.path.join(args.save_root, f"{self.dataset_name}_sigma_{sigma}_{args.ext_name}")
         os.makedirs(self.save_root, exist_ok=True)
 
@@ -624,19 +633,19 @@ class TransferDataset(Dataset):
 
     def __len__(self):
         return len(self.all_ps_data_paths)
-    
+
     def __getitem__(self, index):
         pose_path = self.all_ps_data_paths[index]
         with open(pose_path, "rb") as f:
             pose_data = pickle.load(f)
             if self.dataset_name.lower() == "grew":
                 # print(pose_data.shape)
-                pose_data = pose_data[:,2:].reshape(-1, 17, 3)
-        
-        tmp_split = pose_path.split('/')
+                pose_data = pose_data[:, 2:].reshape(-1, 17, 3)
 
-        heatmap_img = self.heatmap_transform(pose_data) # [T, 2, H, W]
-        
+        tmp_split = os.path.normpath(pose_path).split(os.sep)
+
+        heatmap_img = self.heatmap_transform(pose_data)  # [T, 2, H, W]
+
         save_path_pkl = os.path.join(self.save_root, 'pkl', *tmp_split[-4:-1])
         os.makedirs(save_path_pkl, exist_ok=True)
 
@@ -647,8 +656,10 @@ class TransferDataset(Dataset):
             os.makedirs(save_path_img, exist_ok=True)
             # save_heatemapimg_index = random.choice(list(range(heatmap_img.shape[0])))
             for save_heatemapimg_index in range(heatmap_img.shape[0]):
-                cv2.imwrite(os.path.join(save_path_img, f'bone_{save_heatemapimg_index}.jpg'), heatmap_img[save_heatemapimg_index, 0])
-                cv2.imwrite(os.path.join(save_path_img, f'pose_{save_heatemapimg_index}.jpg'), heatmap_img[save_heatemapimg_index, 1])
+                cv2.imwrite(os.path.join(save_path_img, f'bone_{save_heatemapimg_index}.jpg'),
+                            heatmap_img[save_heatemapimg_index, 0])
+                cv2.imwrite(os.path.join(save_path_img, f'pose_{save_heatemapimg_index}.jpg'),
+                            heatmap_img[save_heatemapimg_index, 1])
 
         pickle.dump(heatmap_img, open(os.path.join(save_path_pkl, tmp_split[-1]), 'wb'))
         return None
@@ -690,9 +701,16 @@ def replace_variables(data, context=None):
     return data
 
 if __name__ == "__main__":
-    dist.init_process_group("nccl", init_method='env://')
-    local_rank = torch.distributed.get_rank()
-    world_size = torch.distributed.get_world_size()
+    # Only initialize distributed process group if not already initialized and we're in a distributed environment
+    if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
+        if torch.distributed.is_available():
+            try:
+                dist.init_process_group("nccl", init_method='env://')
+            except:
+                pass
+
+    local_rank = get_dist_rank()
+    world_size = get_dist_world_size()
 
     args = get_args()
 
@@ -709,4 +727,4 @@ if __name__ == "__main__":
     for _, tmp in tqdm(enumerate(dataloader), total=len(dataloader)):
         pass
 
-    
+

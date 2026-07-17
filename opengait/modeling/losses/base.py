@@ -1,7 +1,7 @@
 from ctypes import ArgumentError
 import torch.nn as nn
 import torch
-from utils import Odict
+from utils import Odict, get_dist_world_size
 import functools
 from utils import ddp_all_gather
 
@@ -18,7 +18,7 @@ def gather_and_scale_wrapper(func):
                 kwds[k] = ddp_all_gather(v)
 
             loss, loss_info = func(*args, **kwds)
-            loss *= torch.distributed.get_world_size()
+            loss *= get_dist_world_size()
             return loss, loss_info
         except:
             raise ArgumentError

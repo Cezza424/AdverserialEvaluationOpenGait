@@ -17,6 +17,7 @@ from ..base_model import BaseModel
 from torch.nn import functional as F
 from kornia import morphology as morph
 import random
+from utils import get_dist_rank
 
 from .BigGait_utils.BigGait_GaitBase import *
 from .BigGait_utils.save_img import save_image, pca_image
@@ -138,7 +139,7 @@ class BiggerGait__DINOv2(BaseModel):
             from fvcore.nn import FlopCountAnalysis
             self.eval()
             with torch.no_grad():
-                device = torch.distributed.get_rank()
+                device = get_dist_rank()
                 inputs = ([[torch.randn((1,1,3,448,224),dtype=torch.float32).to(device), torch.rand(1,dtype=torch.float32).to(device)], None, None, None, None],)
                 flops = FlopCountAnalysis(self.to(device), inputs).total()  / 1e9   # GFLOPs 
             self.train()

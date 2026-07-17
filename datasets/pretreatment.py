@@ -109,8 +109,10 @@ def pretreat(input_path: Path, output_path: Path, img_size: int = 64, workers: i
     img_groups = defaultdict(list)
     logging.info(f'Listing {input_path}')
     total_files = 0
-    for img_path in input_path.rglob('*.png'):
-        if 'gei.png' in img_path.as_posix():
+    for img_path in input_path.rglob('*'):
+        if img_path.suffix.lower() not in {'.png', '.jpg', '.jpeg'}:
+            continue
+        if img_path.stem.endswith('_gei'):
             continue
         if verbose:
             logging.debug(f'Adding {img_path}')

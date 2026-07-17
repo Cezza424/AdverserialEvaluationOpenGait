@@ -1,7 +1,7 @@
 data_cfg:
   dataset_name: CASIA-B
-  dataset_root: your_path
-  num_workers: 1
+  dataset_root: C:\Users\25299867\Downloads\GaitDatasetB-PKL
+  num_workers: 0
   dataset_partition: ./datasets/CASIA-B/CASIA-B.json
   remove_no_gallery: false
   cache: false
@@ -14,7 +14,7 @@ evaluator_cfg:
   save_name: tmp
   eval_func: evaluate_indoor_dataset
   sampler:
-    batch_size: 4
+    batch_size: 1
     sample_type: all_ordered
     type: InferenceSampler
   transform:

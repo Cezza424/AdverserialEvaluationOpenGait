@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from ..base_model import BaseModel
 from ..modules import PackSequenceWrapper, HorizontalPoolingPyramid, SetBlockWrapper, ParallelBN1d, SeparateFCs
 
-from utils import np2var, list2var, get_valid_args, ddp_all_gather
+from utils import np2var, list2var, get_valid_args, ddp_all_gather, get_dist_rank
 from data.transform import get_transform
 from einops import rearrange
 
@@ -137,7 +137,7 @@ class GaitSSB_Pretrain(BaseModel):
         z = ddp_all_gather(z, dim=0, requires_grad=False) # [m, c, p],  m = n * the number of GPUs
 
         logits = torch.einsum('ncp, mcp->nmp', [p, z]) # [n, m, p]
-        rank   = torch.distributed.get_rank()
+        rank   = get_dist_rank()
         labels = torch.arange(rank*n, (rank+1)*n, dtype=torch.long).cuda()
         return logits, labels
 

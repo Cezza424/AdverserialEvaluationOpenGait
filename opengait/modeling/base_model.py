@@ -28,7 +28,7 @@ from data.transform import get_transform
 from data.collate_fn import CollateFn
 from data.dataset import DataSet
 import data.sampler as Samplers
-from utils import Odict, mkdir, ddp_all_gather
+from utils import Odict, mkdir, ddp_all_gather, get_dist_rank, get_dist_world_size
 from utils import get_valid_args, is_list, is_dict, np2var, ts2np, list2var, get_attr_from
 from evaluation import evaluator as eval_functions
 from utils import NoOp
@@ -156,7 +156,7 @@ class BaseModel(MetaModel, nn.Module):
             self.evaluator_trfs = get_transform(
                 cfgs['evaluator_cfg']['transform'])
 
-        self.device = torch.distributed.get_rank()
+        self.device = get_dist_rank()
         torch.cuda.set_device(self.device)
         self.to(device=torch.device(
             "cuda", self.device))
@@ -235,7 +235,7 @@ class BaseModel(MetaModel, nn.Module):
         return scheduler
 
     def save_ckpt(self, iteration):
-        if torch.distributed.get_rank() == 0:
+        if get_dist_rank() == 0:
             mkdir(osp.join(self.save_path, "checkpoints/"))
             save_name = self.engine_cfg['save_name']
             checkpoint = {
@@ -439,10 +439,12 @@ class BaseModel(MetaModel, nn.Module):
     def run_test(model):
         """Accept the instance object(model) here, and then run the test loop."""
         evaluator_cfg = model.cfgs['evaluator_cfg']
-        if torch.distributed.get_world_size() != evaluator_cfg['sampler']['batch_size']:
+        world_size = get_dist_world_size()
+        batch_size = evaluator_cfg['sampler']['batch_size']
+        if world_size != batch_size:
             raise ValueError("The batch size ({}) must be equal to the number of GPUs ({}) in testing mode!".format(
-                evaluator_cfg['sampler']['batch_size'], torch.distributed.get_world_size()))
-        rank = torch.distributed.get_rank()
+                batch_size, world_size))
+        rank = get_dist_rank()
         with torch.no_grad():
             info_dict = model.inference(rank)
         if rank == 0:

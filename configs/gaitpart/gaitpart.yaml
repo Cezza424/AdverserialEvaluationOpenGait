@@ -1,7 +1,7 @@
 data_cfg:
   dataset_name: CASIA-B
-  dataset_root: your_path
-  num_workers: 1
+  dataset_root: C:\Users\25299867\Downloads\GaitDatasetB-PKL
+  num_workers: 0
   remove_no_gallery: false
   test_dataset_name: CASIA-B
 
@@ -11,7 +11,7 @@ evaluator_cfg:
   restore_hint: 120000
   save_name: GaitPart
   sampler:
-    batch_size: 16
+    batch_size: 1
     sample_type: all_ordered
     type: InferenceSampler
   metric: euc # cos
@@ -69,8 +69,8 @@ trainer_cfg:
   sampler:
     batch_shuffle: false
     batch_size:
-      - 8
-      - 16
+      - 1
+      - 1
     frames_num_fixed: 30
     frames_num_max: 50
     frames_num_min: 25

@@ -1,4 +1,3 @@
-
 import os
 import argparse
 import torch
@@ -11,6 +10,8 @@ parser.add_argument('--local_rank', type=int, default=0,
                     help="passed by torch.distributed.launch module")
 parser.add_argument('--local-rank', type=int, default=0,
                     help="passed by torch.distributed.launch module, for pytorch >=2.0")
+parser.add_argument('--single_gpu', action='store_true',
+                    help="run without distributed training")
 parser.add_argument('--cfgs', type=str,
                     default='config/default.yaml', help="path of config file")
 parser.add_argument('--phase', default='train',
@@ -19,6 +20,10 @@ parser.add_argument('--log_to_file', action='store_true',
                     help="log to file, default path is: output/<dataset>/<model>/<save_name>/<logs>/<Datetime>.txt")
 parser.add_argument('--iter', default=0, help="iter to restore")
 opt = parser.parse_args()
+
+
+def is_distributed():
+    return torch.distributed.is_available() and torch.distributed.is_initialized()
 
 
 def initialization(cfgs, training):
@@ -34,7 +39,7 @@ def initialization(cfgs, training):
 
     msg_mgr.log_info(engine_cfg)
 
-    seed = torch.distributed.get_rank()
+    seed = torch.distributed.get_rank() if is_distributed() else 0
     init_seeds(seed)
 
 
@@ -44,11 +49,18 @@ def run_model(cfgs, training):
     msg_mgr.log_info(model_cfg)
     Model = getattr(models, model_cfg['model'])
     model = Model(cfgs, training)
+
     if training and cfgs['trainer_cfg']['sync_BN']:
         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
     if cfgs['trainer_cfg']['fix_BN']:
         model.fix_BN()
-    model = get_ddp_module(model, cfgs['trainer_cfg']['find_unused_parameters'])
+
+    if opt.single_gpu:
+        model = model.cuda()
+    else:
+        model = get_ddp_module(model, cfgs['trainer_cfg']['find_unused_parameters'])
+
     msg_mgr.log_info(params_count(model))
     msg_mgr.log_info("Model Initialization Finished!")
 
@@ -59,15 +71,21 @@ def run_model(cfgs, training):
 
 
 if __name__ == '__main__':
-    torch.distributed.init_process_group('nccl', init_method='env://')
-    if torch.distributed.get_world_size() != torch.cuda.device_count():
-        raise ValueError("Expect number of available GPUs({}) equals to the world size({}).".format(
-            torch.cuda.device_count(), torch.distributed.get_world_size()))
     cfgs = config_loader(opt.cfgs)
     if opt.iter != 0:
         cfgs['evaluator_cfg']['restore_hint'] = int(opt.iter)
         cfgs['trainer_cfg']['restore_hint'] = int(opt.iter)
 
     training = (opt.phase == 'train')
-    initialization(cfgs, training)
-    run_model(cfgs, training)
+
+    if opt.single_gpu:
+        torch.cuda.set_device(0)
+        initialization(cfgs, training)
+        run_model(cfgs, training)
+    else:
+        torch.distributed.init_process_group('nccl', init_method='env://')
+        if torch.distributed.get_world_size() != torch.cuda.device_count():
+            raise ValueError("Expect number of available GPUs({}) equals to the world size({}).".format(
+                torch.cuda.device_count(), torch.distributed.get_world_size()))
+        initialization(cfgs, training)
+        run_model(cfgs, training)
