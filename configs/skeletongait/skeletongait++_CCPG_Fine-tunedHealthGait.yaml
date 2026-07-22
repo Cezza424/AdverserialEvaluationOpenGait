@@ -10,7 +10,7 @@ data_cfg:
 evaluator_cfg:
   enable_float16: true
   restore_ckpt_strict: true
-  restore_hint: 5000
+  restore_hint: 20000
   save_name: SkeletonGaitPP_HealthGait_Finetune
   eval_func: evaluate_indoor_dataset
   sampler:
@@ -97,4 +97,7 @@ trainer_cfg:
         - type: RandomRotate
           prob: 0.2
 
-
+# Add this block to the bottom of skeletongait++_CCPG_Fine-tunedHealthGait.yaml
+attack_cfg:
+  epsilon: 0.9       # L_inf bound for FGSM skeleton attack
+  flip_prob: 1     # Edge flipping probability for silhouette attack

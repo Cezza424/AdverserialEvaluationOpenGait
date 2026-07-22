@@ -1,21 +1,21 @@
 data_cfg:
   dataset_name: CCPG
-  dataset_root: your_path
-  dataset_partition: ./datasets/CCPG/CCPG.json
+  dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouette_Heatmap  # <-- Point to the skeleton pickles
+  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_0.json # <-- Reuse your working partition!
+  test_dataset_name: HealthGait
   num_workers: 1
   data_in_use: [True, True] # heatmap, sil
   remove_no_gallery: false # Remove probe if no gallery for it
-  test_dataset_name: CCPG
 
 evaluator_cfg:
   enable_float16: true
   restore_ckpt_strict: true
   restore_hint: 60000
   save_name: SkeletonGaitPP
-  eval_func: evaluate_CCPG
+  eval_func: evaluate_indoor_dataset
   sampler:
     batch_shuffle: false
-    batch_size: 4
+    batch_size: 1
     sample_type: all_ordered # all indicates whole sequence used to test, while ordered means input sequence by its natural order; Other options:   fixed_unordered
     frames_all_limit: 720 # limit the number of sampled frames to prevent out of memory
   metric: euc # cos
@@ -96,3 +96,6 @@ trainer_cfg:
           prob: 0.2
 
 
+attack_cfg:
+  epsilon: 0.05       # L_inf bound for FGSM skeleton attack
+  flip_prob: 0.20     # Edge flipping probability for silhouette attack

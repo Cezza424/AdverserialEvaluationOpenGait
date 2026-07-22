@@ -15,7 +15,9 @@ import os.path as osp
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as tordata
+import torch.nn.functional as F
 
+from attacks.adversarial_attacks import FGSMSkeletonAttack, EdgeSilhouetteAttack
 from tqdm import tqdm
 from torch.cuda.amp import autocast
 from torch.cuda.amp import GradScaler
@@ -361,13 +363,7 @@ class BaseModel(MetaModel, nn.Module):
         return True
 
     def inference(self, rank):
-        """Inference all the test data.
-
-        Args:
-            rank: the rank of the current process.Transform
-        Returns:
-            Odict: contains the inference results.
-        """
+        """Inference all the test data with optional adversarial perturbations."""
         total_size = len(self.test_loader)
         if rank == 0:
             pbar = tqdm(total=total_size, desc='Transforming')
@@ -376,8 +372,65 @@ class BaseModel(MetaModel, nn.Module):
         batch_size = self.test_loader.batch_sampler.batch_size
         rest_size = total_size
         info_dict = Odict()
+
+        # Retrieve attack mode and hyperparameter settings
+        attack_mode = self.cfgs.get('ATTACK_MODE', 'baseline')
+        eps = self.cfgs.get('attack_cfg', {}).get('epsilon', 0.5)
+        flip_p = self.cfgs.get('attack_cfg', {}).get('flip_prob', 0.2)
+
+        # Initialise attack modules
+        fgsm_attacker = FGSMSkeletonAttack(epsilon=eps)
+        edge_attacker = EdgeSilhouetteAttack(flip_probability=flip_p)
+
         for inputs in self.test_loader:
             ipts = self.inputs_pretreament(inputs)
+
+            # --- ADVERSARIAL ATTACK INTERCEPTION ---
+            if attack_mode != 'baseline':
+                seqs, labs, typs, vies, seqL = ipts
+                pose = seqs[0].transpose(1, 2).contiguous()
+
+                maps = pose[:, :2, ...].clone()
+                sils = pose[:, -1, ...].unsqueeze(1).clone()
+
+                # 1. Edge Silhouette Attack
+                if attack_mode in ['attack_silhouette', 'combined_attack']:
+                    sils = edge_attacker(sils)
+
+                # 2. FGSM Skeleton Attack
+                if attack_mode in ['attack_skeleton', 'combined_attack']:
+                    # Ultra-safe gradient graph construction
+                    with torch.set_grad_enabled(True):
+                        maps_attack = pose[:, :2, ...].detach().clone()
+                        maps_attack.requires_grad_(True)
+                        maps_attack.retain_grad()
+
+                        sils_dummy = sils.detach().clone()
+
+                        temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
+                        temp_ipts = ([temp_pose], labs, typs, vies, seqL)
+
+                        self.zero_grad()
+                        outputs = self.forward(temp_ipts)
+                        logits = outputs['training_feat']['softmax']['logits']
+
+                        # Ensure labels are correctly pushed to GPU
+                        labs_gpu = labs.cuda() if not labs.is_cuda else labs
+                        loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                        loss.backward()
+
+                        # --- THESIS DIAGNOSTIC CHECK ---
+                        grad_sum = maps_attack.grad.abs().sum().item() if maps_attack.grad is not None else 0.0
+                        #if grad_sum == 0.0:
+                        print(grad_sum)
+
+                        maps = fgsm_attacker(maps_attack, maps_attack.grad)
+
+                # Recombine modalities and detach from computational graph
+                adv_pose = torch.cat([maps, sils], dim=1).transpose(1, 2).contiguous().detach()
+                ipts = ([adv_pose], labs, typs, vies, seqL)
+            # --- END ADVERSARIAL INTERCEPTION ---
+
             with autocast(enabled=self.engine_cfg['enable_float16']):
                 retval = self.forward(ipts)
                 inference_feat = retval['inference_feat']
