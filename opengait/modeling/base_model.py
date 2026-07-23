@@ -388,47 +388,81 @@ class BaseModel(MetaModel, nn.Module):
             # --- ADVERSARIAL ATTACK INTERCEPTION ---
             if attack_mode != 'baseline':
                 seqs, labs, typs, vies, seqL = ipts
-                pose = seqs[0].transpose(1, 2).contiguous()
 
-                maps = pose[:, :2, ...].clone()
-                sils = pose[:, -1, ...].unsqueeze(1).clone()
+                is_5d = (seqs[0].dim() == 5)
 
-                # 1. Edge Silhouette Attack
-                if attack_mode in ['attack_silhouette', 'combined_attack']:
+                if is_5d:
+                    # Transpose FIRST to get [Batch, Channels, Sequence, Height, Width]
+                    pose = seqs[0].transpose(1, 2).contiguous()
+                    num_channels = pose.shape[1]
+
+                    if num_channels >= 3:
+                        # Multi-modal (e.g., SkeletonGait++: 2 Heatmaps + 1 Silhouette)
+                        maps = pose[:, :2, ...].clone()
+                        sils = pose[:, -1, ...].unsqueeze(1).clone()
+                    elif num_channels == 2:
+                        # Pure Skeleton (e.g., SkeletonGait: 2 Heatmaps only)
+                        maps = pose.clone()
+                        sils = None
+                    else:
+                        # 5D Pure Silhouette (1 Channel)
+                        maps = None
+                        sils = pose.clone()
+                else:
+                    # 4D Pure Silhouette (e.g., GaitSet): [B, S, H, W] -> [B, 1, S, H, W]
+                    sils = seqs[0].unsqueeze(1).clone()
+                    maps = None
+                    num_channels = 1
+
+                # 1. Edge Silhouette Attack (Runs only if silhouettes exist)
+                if sils is not None and attack_mode in ['attack_silhouette', 'combined_attack']:
                     sils = edge_attacker(sils)
 
-                # 2. FGSM Skeleton Attack
-                if attack_mode in ['attack_skeleton', 'combined_attack']:
-                    # Ultra-safe gradient graph construction
+                # 2. FGSM Skeleton Attack (Runs only if heatmaps exist)
+                if maps is not None and attack_mode in ['attack_skeleton', 'combined_attack']:
                     with torch.set_grad_enabled(True):
-                        maps_attack = pose[:, :2, ...].detach().clone()
+                        maps_attack = maps.detach().clone()
                         maps_attack.requires_grad_(True)
                         maps_attack.retain_grad()
 
-                        sils_dummy = sils.detach().clone()
+                        # Rebuild the dummy tensor based on original channel count
+                        if num_channels >= 3:
+                            sils_dummy = sils.detach().clone()
+                            temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
+                        else:
+                            temp_pose = maps_attack.transpose(1, 2).contiguous()
 
-                        temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
                         temp_ipts = ([temp_pose], labs, typs, vies, seqL)
 
                         self.zero_grad()
                         outputs = self.forward(temp_ipts)
                         logits = outputs['training_feat']['softmax']['logits']
 
-                        # Ensure labels are correctly pushed to GPU
                         labs_gpu = labs.cuda() if not labs.is_cuda else labs
                         loss = F.cross_entropy(logits.mean(-1), labs_gpu)
                         loss.backward()
 
                         # --- THESIS DIAGNOSTIC CHECK ---
                         grad_sum = maps_attack.grad.abs().sum().item() if maps_attack.grad is not None else 0.0
-                        #if grad_sum == 0.0:
-                        print(grad_sum)
+                        if grad_sum == 0.0:
+                            print(
+                                f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring the skeletal heatmaps.")
 
                         maps = fgsm_attacker(maps_attack, maps_attack.grad)
 
-                # Recombine modalities and detach from computational graph
-                adv_pose = torch.cat([maps, sils], dim=1).transpose(1, 2).contiguous().detach()
-                ipts = ([adv_pose], labs, typs, vies, seqL)
+                # Recombine modalities and format correctly for the specific model
+                if is_5d:
+                    if num_channels >= 3:
+                        adv_pose = torch.cat([maps, sils], dim=1).transpose(1, 2).contiguous().detach()
+                    elif num_channels == 2:
+                        adv_pose = maps.transpose(1, 2).contiguous().detach()
+                    else:
+                        adv_pose = sils.transpose(1, 2).contiguous().detach()
+                    ipts = ([adv_pose], labs, typs, vies, seqL)
+                else:
+                    # Remove the channel dimension we added for the attacker [B, 1, S, H, W] -> [B, S, H, W]
+                    adv_sils = sils.squeeze(1).detach()
+                    ipts = ([adv_sils], labs, typs, vies, seqL)
             # --- END ADVERSARIAL INTERCEPTION ---
 
             with autocast(enabled=self.engine_cfg['enable_float16']):

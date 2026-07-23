@@ -1,10 +1,16 @@
+ATTACK_MODE: attack_skeleton  # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
+
+attack_cfg:
+  epsilon: 0.6       # L_inf bound for FGSM skeleton attack
+  flip_prob: 0.40     # Edge flipping probability for silhouette attack
+
 data_cfg:
   dataset_name: CCPG
   dataset_root: C:\Users\25299867\Downloads\HealthGait\Heatmap\HealthGait_sigma_8.0_.pkl\pkl  # <-- Point to the skeleton pickles
   dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
   test_dataset_name: HealthGait
   num_workers: 0
-  data_in_use: [True, False] # heatmap, sil
+  data_in_use: [True] # heatmap, sil
   remove_no_gallery: false # Remove probe if no gallery for it
 
 evaluator_cfg:

@@ -1,10 +1,16 @@
+ATTACK_MODE: attack_silhouette  # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
+
+attack_cfg:
+  epsilon: 0.05       # L_inf bound for FGSM skeleton attack
+  flip_prob: 0.40     # Edge flipping probability for silhouette attack
+
 data_cfg:
   dataset_name: CCPG
-  dataset_root: C:\Users\25299867\Downloads\HealthGait\posePKL  # <-- Point to the skeleton pickles
+  dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouettePKL
   dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
   test_dataset_name: HealthGait
   num_workers: 0
-  data_in_use: [False, False, True, False]
+  data_in_use: [True]
   remove_no_gallery: false # Remove probe if no gallery for it
 
 evaluator_cfg:
@@ -17,7 +23,7 @@ evaluator_cfg:
     batch_size: 1
     sample_type: all_ordered # all indicates whole sequence used to test, while ordered means input sequence by its natural order; Other options:   fixed_unordered
     frames_all_limit: 720 # limit the number of sampled frames to prevent out of memory
-  eval_func: evaluate_CCPG
+  eval_func: evaluate_indoor_dataset
   metric: euc # cos
   transform:
     - type: BaseSilCuttingTransform

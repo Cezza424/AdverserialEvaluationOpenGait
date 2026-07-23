@@ -1,3 +1,9 @@
+ATTACK_MODE: attack_silhouette  # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
+
+attack_cfg:
+  epsilon: 0.05       # L_inf bound for FGSM skeleton attack
+  flip_prob: 0.20     # Edge flipping probability for silhouette attack
+
 data_cfg:
   dataset_name: CASIA-B
   dataset_root: your_path

@@ -1,7 +1,7 @@
 data_cfg:
   dataset_name: CCPG
   dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouette_Heatmap  # <-- Point to the skeleton pickles
-  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_0.json # <-- Reuse your working partition!
+  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
   test_dataset_name: HealthGait
   num_workers: 1
   data_in_use: [True, True] # heatmap, sil
@@ -97,5 +97,5 @@ trainer_cfg:
 
 
 attack_cfg:
-  epsilon: 0.05       # L_inf bound for FGSM skeleton attack
-  flip_prob: 0.20     # Edge flipping probability for silhouette attack
+  epsilon: 0.6       # L_inf bound for FGSM skeleton attack
+  flip_prob: 0.40     # Edge flipping probability for silhouette attack
