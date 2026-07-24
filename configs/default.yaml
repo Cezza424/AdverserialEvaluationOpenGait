@@ -1,6 +1,6 @@
 data_cfg:
   dataset_name: CASIA-B
-  dataset_root: C:\Users\25299867\Downloads\GaitDatasetB-PKL
+  dataset_root: your_path
   num_workers: 0
   dataset_partition: ./datasets/CASIA-B/CASIA-B.json
   remove_no_gallery: false
