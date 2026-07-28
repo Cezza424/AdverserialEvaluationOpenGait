@@ -99,5 +99,7 @@ trainer_cfg:
 
 # Add this block to the bottom of skeletongait++_CCPG_Fine-tunedHealthGait.yaml
 attack_cfg:
+  #use_saliency: true
+  #saliency_fraction: 0.2
   epsilon: 0.6       # L_inf bound for FGSM skeleton attack
   flip_prob: 0.4     # Edge flipping probability for silhouette attack

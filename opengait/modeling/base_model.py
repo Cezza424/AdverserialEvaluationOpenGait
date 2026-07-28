@@ -17,7 +17,7 @@ import torch.optim as optim
 import torch.utils.data as tordata
 import torch.nn.functional as F
 
-from attacks.adversarial_attacks import FGSMSkeletonAttack, EdgeSilhouetteAttack
+from attacks.adversarial_attacks import FGSMSkeletonAttack, EdgeSilhouetteAttack, FrameSaliencyFGSMAttack
 from tqdm import tqdm
 from torch.cuda.amp import autocast
 from torch.cuda.amp import GradScaler
@@ -378,8 +378,16 @@ class BaseModel(MetaModel, nn.Module):
         eps = self.cfgs.get('attack_cfg', {}).get('epsilon', 0.5)
         flip_p = self.cfgs.get('attack_cfg', {}).get('flip_prob', 0.2)
 
-        # Initialise attack modules
-        fgsm_attacker = FGSMSkeletonAttack(epsilon=eps)
+        # NEW: Retrieve Saliency Toggle Options (Defaults to False)
+        use_saliency = self.cfgs.get('attack_cfg', {}).get('use_saliency', False)
+        sal_frac = self.cfgs.get('attack_cfg', {}).get('saliency_fraction', 0.2)
+
+        # Conditionally Initialise the Skeleton Attack Module
+        if use_saliency:
+            fgsm_attacker = FrameSaliencyFGSMAttack(epsilon=eps, fraction_to_attack=sal_frac)
+        else:
+            fgsm_attacker = FGSMSkeletonAttack(epsilon=eps)
+
         edge_attacker = EdgeSilhouetteAttack(flip_probability=flip_p)
 
         for inputs in self.test_loader:

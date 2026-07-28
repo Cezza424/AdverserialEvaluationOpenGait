@@ -1,8 +1,6 @@
 import os
 import argparse
 import torch
-from pyparsing import results
-
 from utils import config_loader, get_msg_mgr, init_seeds
 from modeling import models
 
@@ -15,10 +13,9 @@ def init_opengait_logger(cfgs):
         'output/',
         cfgs['data_cfg']['dataset_name'],
         cfgs['model_cfg']['model'],
-        engine_cfg['save_name'],
+        engine_cfg['save_name']
     )
-
-    msg_mgr.init_logger(output_path, log_to_file=True)
+    msg_mgr.init_logger(output_path, log_to_file=False)
     init_seeds(0)
 
 
@@ -26,61 +23,75 @@ def main():
     parser = argparse.ArgumentParser(description='Automated Adversarial Evaluation Pipeline')
     parser.add_argument('--cfgs', type=str, required=True, help="Path to config file")
     parser.add_argument('--iter', default=20000, help="Iteration checkpoint to evaluate")
-    parser.add_argument('--log_to_file', action='store_true', help="log to file, default path is: output/<dataset>/<model>/<save_name>/<logs>/<Datetime>.txt")
     opt = parser.parse_args()
 
     # Set CUDA device for single-GPU execution
     torch.cuda.set_device(0)
-    cfgs = config_loader(opt.cfgs)
-    modes = ['baseline', 'attack_silhouette', 'attack_skeleton', 'combined_attack']
+
+    # 1. Load initial config just to find the starting baseline value
+    base_cfgs = config_loader(opt.cfgs)
+    start_val = base_cfgs.get('attack_cfg', {}).get('epsilon', 0.1)
+
+    # 2. Safely generate a list of strengths from start_val to 1.0 in 0.1 steps
+    # (Multiplying by 10 and rounding prevents weird Python floating point math like 0.300000000004)
+    strengths = [round(x * 0.1, 1) for x in range(int(start_val * 10), 11)]
+
+    modes = ['baseline', 'attack_silhouette']
     results_summary = {}
-    #results_attack_strength = {}
+    current_strengths = [0.0] if modes == 'baseline' else strengths
+    for strength in current_strengths:
+        # We only need to run the baseline once, so we bypass the sweep for it
 
-    for mode in modes:
-        if mode == 'attack_silhouette':
-            attack_strength = cfgs['attack_cfg'].get('flip_prob')
-        elif mode == 'attack_skeleton':
-            attack_strength = cfgs['attack_cfg'].get('epsilon')
-        elif mode == 'combined_attack':
-            attack_strength = f"Epsilon: {cfgs['attack_cfg'].get('epsilon')}, Flip Prob: {cfgs['attack_cfg'].get('flip_prob')}"
-        else:
-            attack_strength = ''
 
-        print("\n" + "=" * 60)
-        print(f"      RUNNING EVALUATION MODE: {mode.upper()} | {attack_strength}")
-        print("=" * 60 + "\n")
+        for mode in modes:
+            print("\n" + "=" * 60)
+            if mode == 'baseline':
+                print(f"      RUNNING EVALUATION MODE: {mode.upper()}")
+            else:
+                print(f"      RUNNING EVALUATION MODE: {mode.upper()} | STRENGTH: {strength}")
+            print("=" * 60 + "\n")
 
-        # Load fresh configuration for each evaluation pass
+            # Load fresh configuration for this specific evaluation pass
+            cfgs = config_loader(opt.cfgs)
+            cfgs['evaluator_cfg']['restore_hint'] = int(opt.iter)
+            cfgs['ATTACK_MODE'] = mode
 
-        cfgs['evaluator_cfg']['restore_hint'] = int(opt.iter)
-        cfgs['ATTACK_MODE'] = mode
+            # --- OVERRIDE CONFIG HYPERPARAMETERS ---
+            if 'attack_cfg' not in cfgs:
+                cfgs['attack_cfg'] = {}
+            cfgs['attack_cfg']['epsilon'] = strength
+            cfgs['attack_cfg']['flip_prob'] = strength
 
-        # Initialise OpenGait logger
-        init_opengait_logger(cfgs)
+            # Initialise OpenGait logger
+            init_opengait_logger(cfgs)
 
-        # Instantiate Model
-        Model = getattr(models, cfgs['model_cfg']['model'])
-        model = Model(cfgs, training=False).cuda()
+            # Instantiate Model
+            Model = getattr(models, cfgs['model_cfg']['model'])
+            model = Model(cfgs, training=False).cuda()
 
-        # Run test pass and capture accuracy dictionary
-        eval_results = Model.run_test(model)
-        eval_results['attack_strength'] = attack_strength
-        #results_attack_strength = attack_strength
-        # Store results for final summary
-        results_summary[mode] = eval_results
-        #results_attack_strength[mode] =
+            # Run test pass and capture accuracy dictionary
+            eval_results = Model.run_test(model)
 
+            # --- VARIABLE INJECTION ---
+            eval_results['attack_strength'] = str(strength) if mode != 'baseline' else 'N/A'
+            eval_results['mode_name'] = mode
+
+            # Generate a unique dictionary key so loops don't overwrite each other (e.g. 'attack_skeleton_0.4')
+            dict_key = f"{mode}_{strength}"
+            results_summary[dict_key] = eval_results
 
     # Print Final Thesis Results Summary
-    print("\n\n" + "=" * 65)
+    print("\n\n" + "=" * 80)
     print("         ADVERSARIAL EVALUATION SUMMARY REPORT")
-    print("=" * 65)
-    for mode, res in results_summary.items():
-        ugs_r1 = res.get('scalar/test_accuracy/UGS@R1')
-        fgs_r1 = res.get('scalar/test_accuracy/FGS@R1')
+    print("=" * 80)
+    for key, res in results_summary.items():
+        mode = res.get('mode_name', 'Unknown')
+        ugs_r1 = res.get('scalar/test_accuracy/UGS@R1', 'N/A')
+        fgs_r1 = res.get('scalar/test_accuracy/FGS@R1', 'N/A')
         att = res.get('attack_strength', 'N/A')
-        print(f"Mode: {mode:<20}| Strength: {att:<3} | UGS@R1: {ugs_r1}% | FGS@R1: {fgs_r1}%")
-    print("=" * 65)
+
+        print(f"Mode: {mode:<20} | Strength: {att:<10} | UGS@R1: {ugs_r1}% | FGS@R1: {fgs_r1}%")
+    print("=" * 80)
 
 
 if __name__ == '__main__':
