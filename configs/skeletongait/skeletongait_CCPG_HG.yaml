@@ -1,17 +1,23 @@
+ATTACK_MODE: attack_skeleton # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
+
+attack_cfg:
+  epsilon: 0.6       # L_inf bound for FGSM skeleton attack
+  flip_prob: 0.40     # Edge flipping probability for silhouette attack
+
 data_cfg:
-  dataset_name: HealthGait
-  dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouette_Heatmap  # <-- Point to the skeleton pickles
-  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_0.json # <-- Reuse your working partition!
+  dataset_name: CCPG
+  dataset_root: C:\Users\25299867\Downloads\HealthGait\Heatmap\HealthGait_sigma_8.0_.pkl\pkl  # <-- Point to the skeleton pickles
+  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_3.json # <-- Reuse your working partition!
   test_dataset_name: HealthGait
   num_workers: 0
-  data_in_use: [True, True] # heatmap, sil
+  data_in_use: [True] # heatmap, sil
   remove_no_gallery: false # Remove probe if no gallery for it
 
 evaluator_cfg:
   enable_float16: true
   restore_ckpt_strict: true
   restore_hint: 20000
-  save_name: SkeletonGaitPP_HealthGait_Finetune
+  save_name: SkeletonGait_HealthGait_Finetune
   eval_func: evaluate_indoor_dataset
   sampler:
     batch_shuffle: false
@@ -34,59 +40,60 @@ loss_cfg:
     log_accuracy: true
 
 model_cfg:
-  model: SkeletonGaitPP
+  model: DeepGaitV2
   Backbone:
-    in_channels: 3
-    blocks:
+    in_channels: 2
+    mode: p3d
+    layers:
       - 1
       - 1
       - 1
       - 1
-    C: 2
+    channels:
+      - 64
+      - 128
+      - 256
+      - 512
   SeparateBNNecks:
     class_num: 299
+  use_emb2: true
 
 optimizer_cfg:
-  lr: 0.001  # Reduced from 0.1 for gentle fine-tuning
+  lr: 0.001
   momentum: 0.9
   solver: SGD
   weight_decay: 0.0005
 
 scheduler_cfg:
   gamma: 0.1
-  milestones:
+  milestones: # Learning Rate Reduction at each milestones
     - 5000   # Scaled down from 20000
     - 10000  # Scaled down from 30000
     - 15000  # Scaled down from 40000
   scheduler: MultiStepLR
 
 trainer_cfg:
-  enable_float16: true
+  enable_float16: true # half_percesion float for memory reduction and speedup
   fix_BN: false
   log_iter: 100
-  restore_ckpt_strict: false  # CRITICAL: Must be false because class_num changed
-  restore_hint: C:\Users\25299867\PycharmProjects\OpenGait\output\CCPG\SkeletonGaitPP\SkeletonGaitPP\checkpoints\SkeletonGaitPP-60000-clean.pt  # Use the absolute path
+  restore_ckpt_strict: false
+  restore_hint: C:\Users\25299867\PycharmProjects\OpenGait\output\CCPG\DeepGaitV2\SkeletonGait\checkpoints\SkeletonGait-60000.pt
   optimizer_reset: true  # <-- ADD THIS: Flushes the old 100-subject momentum
   scheduler_reset: true  # <-- ADD THIS: Restarts the learning rate schedule
   save_iter: 5000
-  save_name: SkeletonGaitPP_HealthGait_Finetune  # Renamed for safety
+  save_name: SkeletonGait_HealthGait_Finetune
   sync_BN: true
-  total_iter: 20000  # Reduced from 60000
+  total_iter: 20000
   sampler:
     batch_shuffle: true
     batch_size:
-      - 4
-      - 4
-    frames_num_fixed: 30
+      - 4 # TripletSampler, batch_size[0] indicates Number of Identity
+      - 4  #                 batch_size[1] indicates Samples sequqnce for each Identity
+    frames_num_fixed: 30 # fixed frames number for training
     frames_skip_num: 4
-    sample_type: fixed_ordered
+    sample_type: fixed_ordered # fixed control input frames number, unordered for controlling order of input tensor; Other options: unfixed_ordered or all_ordered
     type: TripletSampler
   transform:
-    # - type: Compose
-    #  trf_cfg:
-    #    - type: BaseSilCuttingTransform
-    #    - type: RandomHorizontalFlip
-    #      prob: 0.5
     - type: Compose
       trf_cfg:
         - type: RandomPerspective
@@ -97,9 +104,4 @@ trainer_cfg:
         - type: RandomRotate
           prob: 0.2
 
-# Add this block to the bottom of skeletongait++_CCPG_Fine-tunedHealthGait.yaml
-attack_cfg:
-  #use_saliency: true
-  #saliency_fraction: 0.2
-  epsilon: 0.8       # L_inf bound for FGSM skeleton attack
-  flip_prob: 0.8     # Edge flipping probability for silhouette attack
+

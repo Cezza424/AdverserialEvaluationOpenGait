@@ -260,6 +260,14 @@ class BaseModel(MetaModel, nn.Module):
             self.msg_mgr.log_info(sorted(set(model_state_dict.keys()).intersection(
                 set(self.state_dict().keys()))))
 
+        if not load_ckpt_strict:
+            # Filter out keys where the shapes do not match the current model
+            current_state_dict = self.state_dict()
+            model_state_dict = {
+                k: v for k, v in model_state_dict.items()
+                if k in current_state_dict and v.size() == current_state_dict[k].size()
+            }
+
         self.load_state_dict(model_state_dict, strict=load_ckpt_strict)
         if self.training:
             if not self.engine_cfg["optimizer_reset"] and 'optimizer' in checkpoint:
