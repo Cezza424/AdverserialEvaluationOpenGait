@@ -389,6 +389,12 @@ class BaseModel(MetaModel, nn.Module):
         # NEW: Retrieve Saliency Toggle Options (Defaults to False)
         use_saliency = self.cfgs.get('attack_cfg', {}).get('use_saliency', False)
         sal_frac = self.cfgs.get('attack_cfg', {}).get('saliency_fraction', 0.2)
+        fgsm_attack_both_modalities = self.cfgs.get('attack_cfg', {}).get('fgsm_attack_both_modalities', False)
+        fgsm_target = self.cfgs.get('attack_cfg', {}).get('fgsm_target', None)
+        if fgsm_target is None:
+            fgsm_target = 'both' if fgsm_attack_both_modalities else 'maps'
+        if fgsm_target not in ['maps', 'sils', 'both']:
+            fgsm_target = 'maps'
 
         # Conditionally Initialise the Skeleton Attack Module
         if use_saliency:
@@ -434,19 +440,81 @@ class BaseModel(MetaModel, nn.Module):
                 if sils is not None and attack_mode in ['attack_silhouette', 'combined_attack']:
                     sils = edge_attacker(sils)
 
-                # 2. FGSM Skeleton Attack (Runs only if heatmaps exist)
+                # 2. FGSM Attack
                 if maps is not None and attack_mode in ['attack_skeleton', 'combined_attack']:
-                    with torch.set_grad_enabled(True):
-                        maps_attack = maps.detach().clone()
-                        maps_attack.requires_grad_(True)
-                        maps_attack.retain_grad()
+                    maps_clean = maps.detach().clone()
+                    should_attack_maps = True
+                    should_attack_sils = False
 
-                        # Rebuild the dummy tensor based on original channel count
-                        if num_channels >= 3:
-                            sils_dummy = sils.detach().clone()
-                            temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
+                    if num_channels >= 3 and sils is not None:
+                        should_attack_maps = fgsm_target in ['maps', 'both']
+                        should_attack_sils = fgsm_target in ['sils', 'both']
+
+                    if should_attack_maps:
+                        with torch.set_grad_enabled(True):
+                            maps_attack = maps.detach().clone()
+                            maps_attack.requires_grad_(True)
+                            maps_attack.retain_grad()
+
+                            # Rebuild the dummy tensor based on original channel count
+                            if num_channels >= 3:
+                                sils_dummy = sils.detach().clone()
+                                temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
+                            else:
+                                temp_pose = maps_attack.transpose(1, 2).contiguous()
+
+                            temp_ipts = ([temp_pose], labs, typs, vies, seqL)
+
+                            self.zero_grad()
+                            outputs = self.forward(temp_ipts)
+                            logits = outputs['training_feat']['softmax']['logits']
+
+                            labs_gpu = labs.cuda() if not labs.is_cuda else labs
+                            loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                            loss.backward()
+
+                            # --- THESIS DIAGNOSTIC CHECK ---
+                            grad_sum = maps_attack.grad.abs().sum().item() if maps_attack.grad is not None else 0.0
+                            if grad_sum == 0.0:
+                                print(
+                                    f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring the skeletal heatmaps.")
+
+                            maps = fgsm_attacker(maps_attack, maps_attack.grad)
+
+                    if num_channels >= 3 and sils is not None and should_attack_sils:
+                        with torch.set_grad_enabled(True):
+                            sils_attack = sils.detach().clone()
+                            sils_attack.requires_grad_(True)
+                            sils_attack.retain_grad()
+
+                            temp_pose = torch.cat([maps_clean, sils_attack], dim=1).transpose(1, 2).contiguous()
+                            temp_ipts = ([temp_pose], labs, typs, vies, seqL)
+
+                            self.zero_grad()
+                            outputs = self.forward(temp_ipts)
+                            logits = outputs['training_feat']['softmax']['logits']
+
+                            labs_gpu = labs.cuda() if not labs.is_cuda else labs
+                            loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                            loss.backward()
+
+                            grad_sum = sils_attack.grad.abs().sum().item() if sils_attack.grad is not None else 0.0
+                            if grad_sum == 0.0:
+                                print(
+                                    f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring silhouette inputs.")
+
+                            sils = fgsm_attacker(sils_attack, sils_attack.grad)
+                elif sils is not None and attack_mode in ['attack_skeleton', 'combined_attack']:
+                    # Silhouette-only fallback (e.g., DeepGait): apply FGSM on silhouettes when heatmaps are absent.
+                    with torch.set_grad_enabled(True):
+                        sils_attack = sils.detach().clone()
+                        sils_attack.requires_grad_(True)
+                        sils_attack.retain_grad()
+
+                        if is_5d:
+                            temp_pose = sils_attack.transpose(1, 2).contiguous()
                         else:
-                            temp_pose = maps_attack.transpose(1, 2).contiguous()
+                            temp_pose = sils_attack.squeeze(1).contiguous()
 
                         temp_ipts = ([temp_pose], labs, typs, vies, seqL)
 
@@ -458,13 +526,12 @@ class BaseModel(MetaModel, nn.Module):
                         loss = F.cross_entropy(logits.mean(-1), labs_gpu)
                         loss.backward()
 
-                        # --- THESIS DIAGNOSTIC CHECK ---
-                        grad_sum = maps_attack.grad.abs().sum().item() if maps_attack.grad is not None else 0.0
+                        grad_sum = sils_attack.grad.abs().sum().item() if sils_attack.grad is not None else 0.0
                         if grad_sum == 0.0:
                             print(
-                                f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring the skeletal heatmaps.")
+                                f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring silhouette inputs.")
 
-                        maps = fgsm_attacker(maps_attack, maps_attack.grad)
+                        sils = fgsm_attacker(sils_attack, sils_attack.grad)
 
                 # Recombine modalities and format correctly for the specific model
                 if is_5d:

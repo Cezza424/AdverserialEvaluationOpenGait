@@ -97,9 +97,12 @@ trainer_cfg:
         - type: RandomRotate
           prob: 0.2
 
+#ATTACK_MODE: combined_attack
 # Add this block to the bottom of skeletongait++_CCPG_Fine-tunedHealthGait.yaml
 attack_cfg:
   #use_saliency: true
   #saliency_fraction: 0.2
   epsilon: 0.8       # L_inf bound for FGSM skeleton attack
-  flip_prob: 0.8     # Edge flipping probability for silhouette attack
+  fgsm_target: both  # maps | sils | both (multi-modal only). For sils-only FGSM with clean maps, use: sils.
+  fgsm_attack_both_modalities: true  # If true (multi-modal only), run FGSM on maps and sils separately with the opposite tensor kept clean/detached.
+  flip_prob: 0.0     # Edge flipping probability for silhouette attack

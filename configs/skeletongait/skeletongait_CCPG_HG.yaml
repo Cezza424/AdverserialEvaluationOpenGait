@@ -1,7 +1,7 @@
 ATTACK_MODE: attack_skeleton # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
 
 attack_cfg:
-  epsilon: 0.6       # L_inf bound for FGSM skeleton attack
+  epsilon: 0.8       # L_inf bound for FGSM skeleton attack
   flip_prob: 0.40     # Edge flipping probability for silhouette attack
 
 data_cfg:

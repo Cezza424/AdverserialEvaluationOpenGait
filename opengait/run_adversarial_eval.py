@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--iter', default=20000, help="Iteration checkpoint to evaluate")
     parser.add_argument('--log_to_file', action='store_true', help="Save terminal output to a log file")
     parser.add_argument('--single_run', action='store_true', help="Run a single evaluation for each mode instead of sweeping strengths")
+    parser.add_argument('--fgsm_targets', type=str, default=None, help="Comma-separated FGSM targets for multi-modal runs: maps,sils,both. If unset, uses cfgs value or default behavior.")
     opt = parser.parse_args()
 
     # Set CUDA device for single-GPU execution
@@ -43,9 +44,15 @@ def main():
     # (Multiplying by 10 and rounding prevents weird Python floating point math like 0.300000000004)
     strengths = [round(x * 0.1, 1) for x in range(int(FGSMstart_val * 10), 11)]
     # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
-    modes = ['attack_silhouette']
+    modes = ['baseline', 'attack_skeleton', 'combined_attack']
     results_summary = {}
     singlerun = opt.single_run
+
+    # Parse optional fgsm_targets CLI override
+    if opt.fgsm_targets is not None:
+        fgsm_targets_arg = [t.strip() for t in opt.fgsm_targets.split(',') if t.strip()]
+    else:
+        fgsm_targets_arg = None
 
     for mode in modes:
         # We only need to run the baseline once, so we bypass the sweep for it
@@ -65,51 +72,75 @@ def main():
                 print(f"      RUNNING EVALUATION MODE: {mode.upper()} | STRENGTH: {strength}")
             print("=" * 60 + "\n")
 
-            # Load fresh configuration for this specific evaluation pass
-            cfgs = config_loader(opt.cfgs)
-            cfgs['evaluator_cfg']['restore_hint'] = int(opt.iter)
-            cfgs['ATTACK_MODE'] = mode
+            # If caller provided explicit fgsm_targets and this mode supports FGSM, run each target separately
+            if fgsm_targets_arg is not None and mode in ['attack_skeleton', 'combined_attack']:
+                for target in fgsm_targets_arg:
+                    print(f"--- Running target: {target} (mode={mode}, strength={strength}) ---")
+                    # Load fresh configuration for this specific evaluation pass
+                    cfgs = config_loader(opt.cfgs)
+                    cfgs['evaluator_cfg']['restore_hint'] = int(opt.iter)
+                    cfgs['ATTACK_MODE'] = mode
 
-            # --- OVERRIDE CONFIG HYPERPARAMETERS ---
-            if 'attack_cfg' not in cfgs:
-                cfgs['attack_cfg'] = {}
-            cfgs['attack_cfg']['epsilon'] = strength
-            cfgs['attack_cfg']['flip_prob'] = strength
+                    # --- OVERRIDE CONFIG HYPERPARAMETERS ---
+                    if 'attack_cfg' not in cfgs:
+                        cfgs['attack_cfg'] = {}
+                    cfgs['attack_cfg']['epsilon'] = strength
+                    cfgs['attack_cfg']['flip_prob'] = strength
+                    cfgs['attack_cfg']['fgsm_target'] = target
 
-            #cfgs['attack_cfg']['flip_prob'] = [0.0] if mode == 'attack_skeleton' or mode == 'baseline' else [EdgeStart_val]
-            if singlerun is True:
-                cfgs['attack_cfg']['epsilon'] = FGSMstart_val
-                cfgs['attack_cfg']['flip_prob'] = EdgeStart_val
-                print(f"Overriding attack_cfg for {mode}: epsilon={cfgs['attack_cfg']['epsilon']}, flip_prob={cfgs['attack_cfg']['flip_prob']}")
+                    if singlerun is True:
+                        cfgs['attack_cfg']['epsilon'] = FGSMstart_val
+                        cfgs['attack_cfg']['flip_prob'] = EdgeStart_val
+                        print(f"Overriding attack_cfg for {mode}/{target}: epsilon={cfgs['attack_cfg']['epsilon']}, flip_prob={cfgs['attack_cfg']['flip_prob']}")
 
-                """if mode == 'attack_silhouette':
-                    #cfgs['attack_cfg'] = {}
-                    cfgs['attack_cfg']['epsilon'] = 0
+                    # Instantiate Model
+                    Model = getattr(models, cfgs['model_cfg']['model'])
+                    model = Model(cfgs, training=False).cuda()
+
+                    # Run test pass and capture accuracy dictionary
+                    eval_results = Model.run_test(model)
+
+                    # --- VARIABLE INJECTION ---
+                    eval_results['attack_strength'] = str(strength) if mode != 'baseline' else 'N/A'
+                    eval_results['mode_name'] = f"{mode}_{target}"
+
+                    # Generate a unique dictionary key so loops don't overwrite each other (e.g. 'attack_skeleton_maps_0.4')
+                    dict_key = f"{mode}_{target}_{strength}"
+                    results_summary[dict_key] = eval_results
+
+            else:
+                # Single run behavior (no explicit fgsm_targets override)
+                print(f"--- Running default target behavior for mode={mode}, strength={strength} ---")
+                # Load fresh configuration for this specific evaluation pass
+                cfgs = config_loader(opt.cfgs)
+                cfgs['evaluator_cfg']['restore_hint'] = int(opt.iter)
+                cfgs['ATTACK_MODE'] = mode
+
+                # --- OVERRIDE CONFIG HYPERPARAMETERS ---
+                if 'attack_cfg' not in cfgs:
+                    cfgs['attack_cfg'] = {}
+                cfgs['attack_cfg']['epsilon'] = strength
+                cfgs['attack_cfg']['flip_prob'] = strength
+
+                if singlerun is True:
+                    cfgs['attack_cfg']['epsilon'] = FGSMstart_val
                     cfgs['attack_cfg']['flip_prob'] = EdgeStart_val
                     print(f"Overriding attack_cfg for {mode}: epsilon={cfgs['attack_cfg']['epsilon']}, flip_prob={cfgs['attack_cfg']['flip_prob']}")
-                elif mode == 'attack_skeleton':
-                    #cfgs['attack_cfg'] = {}
-                    cfgs['attack_cfg']['epsilon'] = FGSMstart_val
-                    cfgs['attack_cfg']['flip_prob'] = 0
-                    print(f"Overriding attack_cfg for {mode}: epsilon={cfgs['attack_cfg']['epsilon']}, flip_prob={cfgs['attack_cfg']['flip_prob']}")
-                elif mode == 'combined_attack':
-                    cfgs['attack_cfg']['epsilon'] = FGSMstart_val
-                    cfgs['attack_cfg']['flip_prob'] = EdgeStart_val
-                    """
-            # Instantiate Model
-            Model = getattr(models, cfgs['model_cfg']['model'])
-            model = Model(cfgs, training=False).cuda()
 
-            # Run test pass and capture accuracy dictionary
-            eval_results = Model.run_test(model)
+                # Instantiate Model
+                Model = getattr(models, cfgs['model_cfg']['model'])
+                model = Model(cfgs, training=False).cuda()
 
-            # --- VARIABLE INJECTION ---
-            eval_results['attack_strength'] = str(strength) if mode != 'baseline' else 'N/A'
-            eval_results['mode_name'] = mode
+                # Run test pass and capture accuracy dictionary
+                eval_results = Model.run_test(model)
 
-            # Generate a unique dictionary key so loops don't overwrite each other (e.g. 'attack_skeleton_0.4')
-            dict_key = f"{mode}_{strength}"
-            results_summary[dict_key] = eval_results
+                # --- VARIABLE INJECTION ---
+                eval_results['attack_strength'] = str(strength) if mode != 'baseline' else 'N/A'
+                eval_results['mode_name'] = mode
+
+                # Generate a unique dictionary key so loops don't overwrite each other (e.g. 'attack_skeleton_0.4')
+                dict_key = f"{mode}_{strength}"
+                results_summary[dict_key] = eval_results
 
     # Print Final Thesis Results Summary
     print("\n\n" + "=" * 100)
