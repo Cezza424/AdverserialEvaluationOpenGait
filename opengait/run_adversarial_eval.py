@@ -25,7 +25,7 @@ def init_opengait_logger(cfgs, log_to_file=False):
 def main():
     parser = argparse.ArgumentParser(description='Automated Adversarial Evaluation Pipeline')
     parser.add_argument('--cfgs', type=str, required=True, help="Path to config file")
-    parser.add_argument('--iter', default=20000, help="Iteration checkpoint to evaluate")
+    parser.add_argument('--iter', default=60000, help="Iteration checkpoint to evaluate")
     parser.add_argument('--log_to_file', action='store_true', help="Save terminal output to a log file")
     parser.add_argument('--single_run', action='store_true', help="Run a single evaluation for each mode instead of sweeping strengths")
     parser.add_argument('--fgsm_targets', type=str, default=None, help="Comma-separated FGSM targets for multi-modal runs: maps,sils,both. If unset, uses cfgs value or default behavior.")
@@ -150,9 +150,10 @@ def main():
         mode = res.get('mode_name', 'Unknown')
         ugs_r1 = res.get('scalar/test_accuracy/UGS@R1', 'N/A')
         fgs_r1 = res.get('scalar/test_accuracy/FGS@R1', 'N/A')
+        perceptual = res.get('scalar/attack_perceptual_loss', 'N/A')
         att = res.get('attack_strength', 'N/A')
 
-        print(f"Mode: {mode:<15} | Strength: {FGSMstart_val if singlerun is True else att:<4} | UGS@R1: {ugs_r1}% | FGS@R1: {fgs_r1}%")
+        print(f"Mode: {mode:<15} | Strength: {FGSMstart_val if singlerun is True else att:<4} | UGS@R1: {ugs_r1}% | FGS@R1: {fgs_r1}% | Perceptual: {perceptual}")
     print("=" * 100)
 
 

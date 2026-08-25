@@ -30,12 +30,10 @@ def initialization(cfgs, training):
     msg_mgr = get_msg_mgr()
     engine_cfg = cfgs['trainer_cfg'] if training else cfgs['evaluator_cfg']
     output_path = os.path.join('output/', cfgs['data_cfg']['dataset_name'],
-                               cfgs['model_cfg']['model'], engine_cfg['save_name'])
-    if training:
-        msg_mgr.init_manager(output_path, opt.log_to_file, engine_cfg['log_iter'],
-                             engine_cfg['restore_hint'] if isinstance(engine_cfg['restore_hint'], (int)) else 0)
-    else:
-        msg_mgr.init_logger(output_path, opt.log_to_file)
+                              cfgs['model_cfg']['model'], engine_cfg['save_name'])
+    log_iter = engine_cfg.get('log_iter', 1) if training else 1
+    restore_hint = engine_cfg['restore_hint'] if isinstance(engine_cfg.get('restore_hint', 0), (int)) else 0
+    msg_mgr.init_manager(output_path, opt.log_to_file, log_iter, restore_hint)
 
     msg_mgr.log_info(engine_cfg)
 

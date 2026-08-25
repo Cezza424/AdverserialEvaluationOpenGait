@@ -1,4 +1,4 @@
-ATTACK_MODE: attack_skeleton  # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
+#ATTACK_MODE: attack_silhouette  # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
 
 attack_cfg:
   epsilon: 0.6       # L_inf bound for FGSM skeleton attack
@@ -7,6 +7,9 @@ attack_cfg:
   perceptual_weight: 1.0        # Relative weighting of the perceptual loss in the attack report
   visualize_attacks: true       # Save side-by-side original vs attacked frame comparisons
   visualize_limit: 4            # Max number of frame comparisons to save per sample
+  methods:
+    silhouette: fgsm
+    skeleton: fgsm
 
 data_cfg:
   dataset_name: CCPG
@@ -20,7 +23,7 @@ data_cfg:
 evaluator_cfg:
   enable_float16: true
   restore_ckpt_strict: true
-  restore_hint: 60000
+  restore_hint: C:\Users\25299867\PycharmProjects\OpenGait\output\CCPG\DeepGaitV2\DeepGaitV2\checkpoints\DeepGaitV2-60000.pt
   save_name: DeepGaitV2
   sampler:
     batch_shuffle: false

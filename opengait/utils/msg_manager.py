@@ -54,9 +54,12 @@ class MessageManager:
 
     def flush(self):
         self.info_dict.clear()
-        self.writer.flush()
+        if hasattr(self, 'writer'):
+            self.writer.flush()
 
     def write_to_tensorboard(self, summary):
+        if not hasattr(self, 'writer'):
+            return
 
         for k, v in summary.items():
             module_name = k.split('/')[0]

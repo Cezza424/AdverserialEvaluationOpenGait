@@ -17,7 +17,7 @@ import torch.optim as optim
 import torch.utils.data as tordata
 import torch.nn.functional as F
 
-from attacks.adversarial_attacks import FGSMSkeletonAttack, EdgeSilhouetteAttack, FrameSaliencyFGSMAttack
+from attacks.adversarial_attacks import FGSMSkeletonAttack, EdgeSilhouetteAttack, FrameSaliencyFGSMAttack, PerceptualAttackLoss
 from tqdm import tqdm
 from torch.cuda.amp import autocast
 from torch.cuda.amp import GradScaler
@@ -683,5 +683,14 @@ class BaseModel(MetaModel, nn.Module):
             if getattr(model, 'attack_perceptual_loss_samples', 0) > 0:
                 avg_perceptual_loss = model.attack_perceptual_loss / model.attack_perceptual_loss_samples
                 eval_results['scalar/attack_perceptual_loss'] = avg_perceptual_loss
-                eval_results['attack_visualization_dir'] = model.attack_visualization_dir
+                model.msg_mgr.log_info(
+                    'Attack perceptual loss: {:.6f} ({} samples)'.format(
+                        avg_perceptual_loss, model.attack_perceptual_loss_samples))
+                model.msg_mgr.log_info('Attack visuals saved to {}'.format(model.attack_visualization_dir))
+            tb_results = {}
+            for k, v in eval_results.items():
+                if k.startswith('scalar/') or k.startswith('image/'):
+                    tb_results[k] = v
+            model.msg_mgr.write_to_tensorboard(tb_results)
+            model.msg_mgr.flush()
             return eval_results
