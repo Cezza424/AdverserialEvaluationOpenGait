@@ -2,7 +2,11 @@ ATTACK_MODE: attack_skeleton  # Options: baseline, attack_silhouette, attack_ske
 
 attack_cfg:
   epsilon: 0.6       # L_inf bound for FGSM skeleton attack
-  #flip_prob: 0.6     # Edge flipping probability for silhouette attack
+  flip_prob: 0.40     # Edge flipping probability for silhouette attack
+  perceptual_enabled: true      # Measure how visually noticeable the attack is with a perceptual loss
+  perceptual_weight: 1.0        # Relative weighting of the perceptual loss in the attack report
+  visualize_attacks: true       # Save side-by-side original vs attacked frame comparisons
+  visualize_limit: 4            # Max number of frame comparisons to save per sample
 
 data_cfg:
   dataset_name: CCPG

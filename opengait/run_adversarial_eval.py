@@ -44,7 +44,7 @@ def main():
     # (Multiplying by 10 and rounding prevents weird Python floating point math like 0.300000000004)
     strengths = [round(x * 0.1, 1) for x in range(int(FGSMstart_val * 10), 11)]
     # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
-    modes = ['baseline', 'attack_skeleton', 'combined_attack']
+    modes = ['attack_silhouette']
     results_summary = {}
     singlerun = opt.single_run
 

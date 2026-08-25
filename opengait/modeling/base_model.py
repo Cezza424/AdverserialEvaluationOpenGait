@@ -383,14 +383,28 @@ class BaseModel(MetaModel, nn.Module):
 
         # Retrieve attack mode and hyperparameter settings
         attack_mode = self.cfgs.get('ATTACK_MODE', 'baseline')
-        eps = self.cfgs.get('attack_cfg', {}).get('epsilon', 0.5)
-        flip_p = self.cfgs.get('attack_cfg', {}).get('flip_prob', 0.2)
+        attack_cfg = self.cfgs.get('attack_cfg', {})
+        eps = attack_cfg.get('epsilon', 0.5)
+        flip_p = attack_cfg.get('flip_prob', 0.2)
+        self.attack_perceptual_loss = 0.0
+        self.attack_perceptual_loss_samples = 0
+        self.attack_visualization_dir = osp.join(self.save_path, 'attack_visuals')
+
+        perceptual_enabled = bool(attack_cfg.get('perceptual_enabled', True))
+        perceptual_weight = float(attack_cfg.get('perceptual_weight', 1.0))
+        visualize_attacks = bool(attack_cfg.get('visualize_attacks', True))
+        visualize_limit = max(1, int(attack_cfg.get('visualize_limit', 4)))
+        perceptual_loss_fn = PerceptualAttackLoss(
+            weight=perceptual_weight,
+            visualize=visualize_attacks,
+            save_dir=self.attack_visualization_dir,
+        )
 
         # NEW: Retrieve Saliency Toggle Options (Defaults to False)
-        use_saliency = self.cfgs.get('attack_cfg', {}).get('use_saliency', False)
-        sal_frac = self.cfgs.get('attack_cfg', {}).get('saliency_fraction', 0.2)
-        fgsm_attack_both_modalities = self.cfgs.get('attack_cfg', {}).get('fgsm_attack_both_modalities', False)
-        fgsm_target = self.cfgs.get('attack_cfg', {}).get('fgsm_target', None)
+        use_saliency = attack_cfg.get('use_saliency', False)
+        sal_frac = attack_cfg.get('saliency_fraction', 0.2)
+        fgsm_attack_both_modalities = attack_cfg.get('fgsm_attack_both_modalities', False)
+        fgsm_target = attack_cfg.get('fgsm_target', None)
         if fgsm_target is None:
             fgsm_target = 'both' if fgsm_attack_both_modalities else 'maps'
         if fgsm_target not in ['maps', 'sils', 'both']:
@@ -436,102 +450,119 @@ class BaseModel(MetaModel, nn.Module):
                     maps = None
                     num_channels = 1
 
-                # 1. Edge Silhouette Attack (Runs only if silhouettes exist)
-                if sils is not None and attack_mode in ['attack_silhouette', 'combined_attack']:
-                    sils = edge_attacker(sils)
+                # Determine which modalities are targeted by ATTACK_MODE.
+                # Backwards-compatible with old names.
+                target_sils = False
+                target_maps = False
+                if attack_mode in ['attack_silhouette', 'attack_skeleton', 'attack_silhouette', 'attack_skeleton']:
+                    # legacy names handled below
+                    pass
+                if attack_mode in ['attack_silhouette', 'silhouette']:
+                    target_sils = True
+                if attack_mode in ['attack_skeleton', 'skeleton']:
+                    target_maps = True
+                if attack_mode in ['combined_attack', 'combined']:
+                    target_sils = True
+                    target_maps = True
 
-                # 2. FGSM Attack
-                if maps is not None and attack_mode in ['attack_skeleton', 'combined_attack']:
-                    maps_clean = maps.detach().clone()
-                    should_attack_maps = True
-                    should_attack_sils = False
+                # Per-modality method configuration (defaults: silhouette=fgsm, skeleton=fgsm)
+                methods_cfg = self.cfgs.get('attack_cfg', {}).get('methods', {})
+                sil_method = methods_cfg.get('silhouette', 'fgsm')
+                skel_method = methods_cfg.get('skeleton', 'fgsm')
 
-                    if num_channels >= 3 and sils is not None:
-                        should_attack_maps = fgsm_target in ['maps', 'both']
-                        should_attack_sils = fgsm_target in ['sils', 'both']
+                # Normalize method values
+                sil_method = sil_method if sil_method in ['fgsm', 'edge', 'none'] else 'fgsm'
+                skel_method = skel_method if skel_method in ['fgsm', 'none'] else 'fgsm'
 
-                    if should_attack_maps:
-                        with torch.set_grad_enabled(True):
-                            maps_attack = maps.detach().clone()
-                            maps_attack.requires_grad_(True)
-                            maps_attack.retain_grad()
+                maps_clean = maps.detach().clone() if maps is not None else None
+                sils_clean = sils.detach().clone() if sils is not None else None
 
-                            # Rebuild the dummy tensor based on original channel count
-                            if num_channels >= 3:
-                                sils_dummy = sils.detach().clone()
-                                temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
-                            else:
-                                temp_pose = maps_attack.transpose(1, 2).contiguous()
-
-                            temp_ipts = ([temp_pose], labs, typs, vies, seqL)
-
-                            self.zero_grad()
-                            outputs = self.forward(temp_ipts)
-                            logits = outputs['training_feat']['softmax']['logits']
-
-                            labs_gpu = labs.cuda() if not labs.is_cuda else labs
-                            loss = F.cross_entropy(logits.mean(-1), labs_gpu)
-                            loss.backward()
-
-                            # --- THESIS DIAGNOSTIC CHECK ---
-                            grad_sum = maps_attack.grad.abs().sum().item() if maps_attack.grad is not None else 0.0
-                            if grad_sum == 0.0:
-                                print(
-                                    f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring the skeletal heatmaps.")
-
-                            maps = fgsm_attacker(maps_attack, maps_attack.grad)
-
-                    if num_channels >= 3 and sils is not None and should_attack_sils:
+                # 1. Silhouette method: edge or fgsm
+                if target_sils and sils is not None:
+                    if sil_method == 'edge':
+                        sils = edge_attacker(sils)
+                    elif sil_method == 'fgsm':
+                        # If maps exist, keep maps clean as dummy context while attacking sils
                         with torch.set_grad_enabled(True):
                             sils_attack = sils.detach().clone()
                             sils_attack.requires_grad_(True)
                             sils_attack.retain_grad()
 
-                            temp_pose = torch.cat([maps_clean, sils_attack], dim=1).transpose(1, 2).contiguous()
+                            if maps is not None:
+                                temp_pose = torch.cat([maps_clean, sils_attack], dim=1).transpose(1, 2).contiguous()
+                            else:
+                                if is_5d:
+                                    temp_pose = sils_attack.transpose(1, 2).contiguous()
+                                else:
+                                    temp_pose = sils_attack.squeeze(1).contiguous()
+
                             temp_ipts = ([temp_pose], labs, typs, vies, seqL)
 
                             self.zero_grad()
                             outputs = self.forward(temp_ipts)
-                            logits = outputs['training_feat']['softmax']['logits']
-
-                            labs_gpu = labs.cuda() if not labs.is_cuda else labs
-                            loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                            training_feat = outputs.get('training_feat', {})
+                            if 'softmax' in training_feat and 'logits' in training_feat['softmax']:
+                                logits = training_feat['softmax']['logits']
+                                labs_gpu = labs.cuda() if not labs.is_cuda else labs
+                                loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                            elif 'triplet' in training_feat and 'embeddings' in training_feat['triplet']:
+                                embeddings = training_feat['triplet']['embeddings']
+                                loss = embeddings.pow(2).mean()
+                            else:
+                                inference_feat = outputs.get('inference_feat', {})
+                                embeddings = inference_feat.get('embeddings', None)
+                                if embeddings is None:
+                                    raise KeyError("No usable adversarial objective found in model output for attack generation.")
+                                loss = embeddings.pow(2).mean()
                             loss.backward()
 
                             grad_sum = sils_attack.grad.abs().sum().item() if sils_attack.grad is not None else 0.0
                             if grad_sum == 0.0:
-                                print(
-                                    f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring silhouette inputs.")
+                                print(f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring silhouette inputs.")
 
                             sils = fgsm_attacker(sils_attack, sils_attack.grad)
-                elif sils is not None and attack_mode in ['attack_skeleton', 'combined_attack']:
-                    # Silhouette-only fallback (e.g., DeepGait): apply FGSM on silhouettes when heatmaps are absent.
-                    with torch.set_grad_enabled(True):
-                        sils_attack = sils.detach().clone()
-                        sils_attack.requires_grad_(True)
-                        sils_attack.retain_grad()
 
-                        if is_5d:
-                            temp_pose = sils_attack.transpose(1, 2).contiguous()
+                # 2. Skeleton/Maps method: fgsm
+                if target_maps and maps is not None and skel_method == 'fgsm':
+                    with torch.set_grad_enabled(True):
+                        maps_attack = maps.detach().clone()
+                        maps_attack.requires_grad_(True)
+                        maps_attack.retain_grad()
+
+                        # If sils exist, keep a clean sils dummy
+                        if num_channels >= 3 and sils is not None:
+                            sils_dummy = sils_clean
+                            temp_pose = torch.cat([maps_attack, sils_dummy], dim=1).transpose(1, 2).contiguous()
                         else:
-                            temp_pose = sils_attack.squeeze(1).contiguous()
+                            temp_pose = maps_attack.transpose(1, 2).contiguous()
 
                         temp_ipts = ([temp_pose], labs, typs, vies, seqL)
 
                         self.zero_grad()
                         outputs = self.forward(temp_ipts)
-                        logits = outputs['training_feat']['softmax']['logits']
-
-                        labs_gpu = labs.cuda() if not labs.is_cuda else labs
-                        loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                        training_feat = outputs.get('training_feat', {})
+                        if 'softmax' in training_feat and 'logits' in training_feat['softmax']:
+                            logits = training_feat['softmax']['logits']
+                            labs_gpu = labs.cuda() if not labs.is_cuda else labs
+                            loss = F.cross_entropy(logits.mean(-1), labs_gpu)
+                        elif 'triplet' in training_feat and 'embeddings' in training_feat['triplet']:
+                            embeddings = training_feat['triplet']['embeddings']
+                            loss = embeddings.pow(2).mean()
+                        else:
+                            inference_feat = outputs.get('inference_feat', {})
+                            embeddings = inference_feat.get('embeddings', None)
+                            if embeddings is None:
+                                raise KeyError("No usable adversarial objective found in model output for attack generation.")
+                            loss = embeddings.pow(2).mean()
                         loss.backward()
 
-                        grad_sum = sils_attack.grad.abs().sum().item() if sils_attack.grad is not None else 0.0
+                        grad_sum = maps_attack.grad.abs().sum().item() if maps_attack.grad is not None else 0.0
                         if grad_sum == 0.0:
-                            print(
-                                f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring silhouette inputs.")
+                            print(f"\n[THESIS ALERT] Gradient sum is {grad_sum}! The network is ignoring the skeletal heatmaps.")
 
-                        sils = fgsm_attacker(sils_attack, sils_attack.grad)
+                        maps = fgsm_attacker(maps_attack, maps_attack.grad)
+
+                # Note: When both modalities are targeted with FGSM, this applies silhouette FGSM first then maps FGSM
 
                 # Recombine modalities and format correctly for the specific model
                 if is_5d:
@@ -541,11 +572,22 @@ class BaseModel(MetaModel, nn.Module):
                         adv_pose = maps.transpose(1, 2).contiguous().detach()
                     else:
                         adv_pose = sils.transpose(1, 2).contiguous().detach()
+                    attacked_seq = adv_pose.detach().clone()
                     ipts = ([adv_pose], labs, typs, vies, seqL)
                 else:
                     # Remove the channel dimension we added for the attacker [B, 1, S, H, W] -> [B, S, H, W]
                     adv_sils = sils.squeeze(1).detach()
+                    attacked_seq = adv_sils.detach().clone()
                     ipts = ([adv_sils], labs, typs, vies, seqL)
+
+                if perceptual_enabled and attack_mode != 'baseline':
+                    original_seq = seqs[0].detach().clone()
+                    batch_perceptual_loss = perceptual_loss_fn(original_seq, attacked_seq)
+                    if torch.is_tensor(batch_perceptual_loss):
+                        batch_perceptual_loss = batch_perceptual_loss.detach().cpu().item()
+                    self.attack_perceptual_loss += float(batch_perceptual_loss)
+                    self.attack_perceptual_loss_samples += 1
+                    perceptual_loss_fn.save_visualization(original_seq, attacked_seq, prefix=f'attack_{self.attack_perceptual_loss_samples:02d}', limit=visualize_limit)
             # --- END ADVERSARIAL INTERCEPTION ---
 
             with autocast(enabled=self.engine_cfg['enable_float16']):
@@ -637,4 +679,9 @@ class BaseModel(MetaModel, nn.Module):
                 dataset_name = model.cfgs['data_cfg']['test_dataset_name']
             except:
                 dataset_name = model.cfgs['data_cfg']['dataset_name']
-            return eval_func(info_dict, dataset_name, **valid_args)
+            eval_results = eval_func(info_dict, dataset_name, **valid_args)
+            if getattr(model, 'attack_perceptual_loss_samples', 0) > 0:
+                avg_perceptual_loss = model.attack_perceptual_loss / model.attack_perceptual_loss_samples
+                eval_results['scalar/attack_perceptual_loss'] = avg_perceptual_loss
+                eval_results['attack_visualization_dir'] = model.attack_visualization_dir
+            return eval_results

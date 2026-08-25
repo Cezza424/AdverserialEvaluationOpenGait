@@ -97,12 +97,47 @@ trainer_cfg:
         - type: RandomRotate
           prob: 0.2
 
-#ATTACK_MODE: combined_attack
-# Add this block to the bottom of skeletongait++_CCPG_Fine-tunedHealthGait.yaml
+#ATTACK_MODE: attack_skeleton
+# Attack configuration (per-modality methods and examples)
+# - ATTACK_MODE selects which modalities are targeted: baseline, attack_silhouette, attack_skeleton, combined_attack
+# - attack_cfg.methods chooses the attack method per modality:
+#     silhouette: fgsm | edge | none
+#     skeleton: fgsm | none
+# Methods take precedence; fgsm_target/fgsm_attack_both_modalities remain for backward compatibility.
 attack_cfg:
   #use_saliency: true
   #saliency_fraction: 0.2
-  epsilon: 0.8       # L_inf bound for FGSM skeleton attack
-  fgsm_target: both  # maps | sils | both (multi-modal only). For sils-only FGSM with clean maps, use: sils.
-  fgsm_attack_both_modalities: true  # If true (multi-modal only), run FGSM on maps and sils separately with the opposite tensor kept clean/detached.
-  flip_prob: 0.0     # Edge flipping probability for silhouette attack
+  methods:
+    silhouette: edge
+    skeleton: fgsm
+
+  epsilon: 0.6       # L_inf bound for FGSM attack
+  #fgsm_target: both  # legacy: maps | sils | both (multi-modal only). methods block is preferred.
+  #fgsm_attack_both_modalities: True  # legacy flag (kept for compatibility)
+  flip_prob: 0.6     # Edge flipping probability for silhouette edge attack (set 0.0 to disable)
+# Examples:
+# 1) FGSM on both modalities (no edge flips):
+#    ATTACK_MODE: combined_attack
+#    attack_cfg:
+#      methods:
+#        silhouette: fgsm
+#        skeleton: fgsm
+#      flip_prob: 0.0
+#
+# 2) FGSM on silhouettes only (maps kept clean):
+#    ATTACK_MODE: attack_silhouette
+#    attack_cfg:
+#      methods:
+#        silhouette: fgsm
+#        skeleton: none
+#
+# 3) FGSM on skeleton heatmaps only (sils kept clean):
+#    ATTACK_MODE: attack_skeleton
+#    attack_cfg:
+#      methods:
+#        silhouette: none
+#        skeleton: fgsm
+#
+# Helpful eval command (single run, per-target sweep):
+# python opengait/run_adversarial_eval.py --cfgs configs/skeletongait/skeletongait++_CCPG_Fine-tunedHealthGait.yaml --single_run --fgsm_targets maps,sils
+# The script will run the configured ATTACK_MODEs and honor methods per modality. If you pass --fgsm_targets it will run per-target evaluations in the given order.
