@@ -1,7 +1,7 @@
 data_cfg:
   dataset_name: HealthGait
-  dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouette_Heatmap  # <-- Point to the skeleton pickles
-  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_0.json # <-- Reuse your working partition!
+  dataset_root: C:\Users\25299867\Downloads\HealthGait\silhouette_Heatmap
+  dataset_partition: C:\Users\25299867\Downloads\HealthGait\partitions\Sex\opengait_partition_0.json
   test_dataset_name: HealthGait
   num_workers: 0
   data_in_use: [True, True] # heatmap, sil
@@ -69,7 +69,7 @@ trainer_cfg:
   optimizer_reset: true  # <-- ADD THIS: Flushes the old 100-subject momentum
   scheduler_reset: true  # <-- ADD THIS: Restarts the learning rate schedule
   save_iter: 5000
-  save_name: SkeletonGaitPP_HealthGait_Finetune  # Renamed for safety
+  save_name: SkeletonGaitPP_HealthGait_Finetune
   sync_BN: true
   total_iter: 20000  # Reduced from 60000
   sampler:
