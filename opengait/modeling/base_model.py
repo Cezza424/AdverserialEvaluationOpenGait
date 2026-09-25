@@ -400,7 +400,7 @@ class BaseModel(MetaModel, nn.Module):
             save_dir=self.attack_visualization_dir,
         )
 
-        # NEW: Retrieve Saliency Toggle Options (Defaults to False)
+        # Retrieve Saliency Toggle Options (Defaults to False)
         use_saliency = attack_cfg.get('use_saliency', False)
         sal_frac = attack_cfg.get('saliency_fraction', 0.2)
         fgsm_attack_both_modalities = attack_cfg.get('fgsm_attack_both_modalities', False)
@@ -451,7 +451,6 @@ class BaseModel(MetaModel, nn.Module):
                     num_channels = 1
 
                 # Determine which modalities are targeted by ATTACK_MODE.
-                # Backwards-compatible with old names.
                 target_sils = False
                 target_maps = False
                 if attack_mode in ['attack_silhouette', 'attack_skeleton', 'attack_silhouette', 'attack_skeleton']:
@@ -562,7 +561,7 @@ class BaseModel(MetaModel, nn.Module):
 
                         maps = fgsm_attacker(maps_attack, maps_attack.grad)
 
-                # Note: When both modalities are targeted with FGSM, this applies silhouette FGSM first then maps FGSM
+                # When both modalities are targeted with FGSM, this applies silhouette FGSM first then maps FGSM
 
                 # Recombine modalities and format correctly for the specific model
                 if is_5d:
@@ -575,7 +574,7 @@ class BaseModel(MetaModel, nn.Module):
                     attacked_seq = adv_pose.detach().clone()
                     ipts = ([adv_pose], labs, typs, vies, seqL)
                 else:
-                    # Remove the channel dimension we added for the attacker [B, 1, S, H, W] -> [B, S, H, W]
+                    # Remove the channel dimension added for the attacker [B, 1, S, H, W] -> [B, S, H, W]
                     adv_sils = sils.squeeze(1).detach()
                     attacked_seq = adv_sils.detach().clone()
                     ipts = ([adv_sils], labs, typs, vies, seqL)

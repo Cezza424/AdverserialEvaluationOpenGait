@@ -44,7 +44,7 @@ def main():
     # (Multiplying by 10 and rounding prevents weird Python floating point math like 0.300000000004)
     strengths = [round(x * 0.1, 1) for x in range(int(FGSMstart_val * 10), 11)]
     # Options: baseline, attack_silhouette, attack_skeleton, combined_attack
-    modes = ['attack_silhouette']
+    modes = ['baseline, attack_silhouette, attack_skeleton, combined_attack']
     results_summary = {}
     singlerun = opt.single_run
 
@@ -53,9 +53,9 @@ def main():
         fgsm_targets_arg = [t.strip() for t in opt.fgsm_targets.split(',') if t.strip()]
     else:
         fgsm_targets_arg = None
-
+    # We only need to run the baseline once, so we bypass the sweep for it
     for mode in modes:
-        # We only need to run the baseline once, so we bypass the sweep for it
+
         if singlerun is True or mode == 'baseline':
             current_strengths = [0.0]
             print(f"Running single evaluation for mode: {mode} with strengths: {current_strengths}")
@@ -138,7 +138,7 @@ def main():
                 eval_results['attack_strength'] = str(strength) if mode != 'baseline' else 'N/A'
                 eval_results['mode_name'] = mode
 
-                # Generate a unique dictionary key so loops don't overwrite each other (e.g. 'attack_skeleton_0.4')
+                # Generates a unique dictionary key so loops don't overwrite each other              (e.g. 'attack_skeleton_0.4')
                 dict_key = f"{mode}_{strength}"
                 results_summary[dict_key] = eval_results
 
