@@ -51,5 +51,5 @@ Then run
 python opengait/run_adversarial_eval.py --cfgs C:\Users\25299867\PycharmProjects\OpenGait\configs\deepgaitv2\DeepGaitV2_ccpg.yaml --log_to_file --single_run
 ```
 
-remove the --single\_run flag for the iterative attacks mode and set the [epsilon](https://github.com/Cezza424/AdverserialEvaluationOpenGait/blob/ac595c92bab3c9ec886cc322173eab95ecbe838c/configs/skeletongait/skeletongait%252B%252B_CCPG_Fine-tunedHealthGait.yaml#L114) and [flip\_prob](https://github.com/Cezza424/AdverserialEvaluationOpenGait/blob/ac595c92bab3c9ec886cc322173eab95ecbe838c/configs/skeletongait/skeletongait%252B%252B_CCPG_Fine-tunedHealthGait.yaml#L117) values to 0.
+remove the --single\_run flag for the iterative attacks mode and set the [epsilon](https://github.com/Cezza424/AdverserialEvaluationOpenGait/blob/ac595c92bab3c9ec886cc322173eab95ecbe838c/configs/skeletongait/skeletongait%252B%252B_CCPG_Fine-tunedHealthGait.yaml#L114) and [flip\_prob](https://github.com/Cezza424/AdverserialEvaluationOpenGait/blob/ac595c92bab3c9ec886cc322173eab95ecbe838c/configs/skeletongait/skeletongait%252B%252B_CCPG_Fine-tunedHealthGait.yaml#L117) values in the [config file](https://github.com/Cezza424/AdverserialEvaluationOpenGait/blob/a1e76121c0f6b386ea99e5080660f402d662b174/configs/skeletongait/skeletongait%252B%252B_CCPG_Fine-tunedHealthGait.yaml) to 0.
 
